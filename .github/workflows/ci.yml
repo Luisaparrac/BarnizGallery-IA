@@ -7,9 +7,11 @@ on:
 permissions:
   contents: read
 
+# In pull requests a new push replaces the previous run; on main every commit is checked,
+# because Render deploys each push.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   checks:
