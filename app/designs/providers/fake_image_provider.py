@@ -1,8 +1,9 @@
 """Free, offline image provider for development and tests.
 
 Pattern: **Adapter**. Adapts Pillow drawing to the ``ImageProvider`` interface. The output
-is deterministic: the same request always produces the same PNG, so it can be tested and
-used while developing without paying for OpenAI.
+is deterministic: the same request always produces the same image, so it can be tested and
+used while developing without paying for OpenAI. It honours the configured format (webp,
+jpeg or png), so the backend receives the same kind of image as in production.
 """
 
 import base64
@@ -11,6 +12,7 @@ import io
 from PIL import Image, ImageDraw
 
 from app.core.text import normalize_code
+from app.designs.image_format import MIME_TYPES, ImageFormat
 from app.designs.providers.image_provider import ImageProvider
 from app.schemas.designs import DesignRequest, GeneratedImage
 
@@ -26,6 +28,10 @@ BOX_SHAPES = ("caja", "cofre", "baul", "joyero", "marco", "cuadro", "tabla")
 class FakeImageProvider(ImageProvider):
     name = "fake"
 
+    def __init__(self, image_format: ImageFormat = "png", compression: int = 80) -> None:
+        self._format = image_format
+        self._compression = compression
+
     @property
     def model(self) -> str:
         return "fake-pillow"
@@ -35,8 +41,10 @@ class FakeImageProvider(ImageProvider):
         shape = self._shape_kind(request.shape)
         return [
             GeneratedImage(
-                image_base64=self._draw(shape, palette, len(request.motifs), variant),
-                mime_type="image/png",
+                image_base64=self._encode(
+                    self._draw(shape, palette, len(request.motifs), variant)
+                ),
+                mime_type=MIME_TYPES[self._format],
             )
             for variant in range(count)
         ]
@@ -50,8 +58,16 @@ class FakeImageProvider(ImageProvider):
             return "box"
         return "rounded"
 
+    def _encode(self, image: Image.Image) -> str:
+        buffer = io.BytesIO()
+        if self._format == "png":
+            image.save(buffer, format="PNG")
+        else:
+            image.save(buffer, format=self._format.upper(), quality=self._compression)
+        return base64.b64encode(buffer.getvalue()).decode("ascii")
+
     @staticmethod
-    def _draw(shape: str, palette: list[str], motif_count: int, variant: int) -> str:
+    def _draw(shape: str, palette: list[str], motif_count: int, variant: int) -> Image.Image:
         # Each variant rotates the colour order so several images differ from each other.
         colors = palette[variant % len(palette) :] + palette[: variant % len(palette)]
         image = Image.new("RGB", (IMAGE_SIZE, IMAGE_SIZE), BACKGROUND)
@@ -80,7 +96,4 @@ class FakeImageProvider(ImageProvider):
             x = center + offset
             diamond = [(x, center - 14), (x + 10, center), (x, center + 14), (x - 10, center)]
             draw.polygon(diamond, fill=motif_colors[index % len(motif_colors)], outline=OUTLINE)
-
-        buffer = io.BytesIO()
-        image.save(buffer, format="PNG")
-        return base64.b64encode(buffer.getvalue()).decode("ascii")
+        return image

@@ -1,6 +1,7 @@
 import base64
 import io
 
+import numpy as np
 import pytest
 from PIL import Image
 
@@ -120,7 +121,7 @@ def test_designs_endpoint_returns_images(client, auth_headers):
     assert body["model"] == "fake-pillow"
     assert "Barniz de Pasto" in body["prompt"]
     assert len(body["images"]) == 1
-    assert body["images"][0]["mime_type"] == "image/png"
+    assert body["images"][0]["mime_type"] == "image/webp"
 
 
 def test_designs_endpoint_requires_api_key(client):
@@ -152,3 +153,41 @@ def test_designs_endpoint_rejects_invalid_input(client, auth_headers, change):
 
     assert response.status_code == 400
     assert response.json()["code"] == "invalid_request"
+
+
+# --- Image format ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("image_format", "pil_format", "mime"),
+    [("webp", "WEBP", "image/webp"), ("jpeg", "JPEG", "image/jpeg"), ("png", "PNG", "image/png")],
+)
+def test_fake_provider_honours_format(design_request, image_format, pil_format, mime):
+    image = FakeImageProvider(image_format).generate("prompt", design_request, 1)[0]
+
+    assert image.mime_type == mime
+    assert Image.open(io.BytesIO(base64.b64decode(image.image_base64))).format == pil_format
+
+
+def test_webp_is_much_lighter_than_png_for_photos():
+    # Photo-like texture (gradient + seeded noise), like the images OpenAI returns.
+    # Flat drawings such as the fake's compress better as PNG, so they are not used here.
+    rng = np.random.default_rng(7)
+    gradient = np.linspace(0, 255, 512, dtype=np.float32)
+    pixels = np.stack([np.add.outer(gradient, gradient) / 2] * 3, axis=-1)
+    pixels = np.clip(pixels + rng.normal(0, 12, pixels.shape), 0, 255).astype(np.uint8)
+    photo = Image.fromarray(pixels, "RGB")
+
+    webp = FakeImageProvider("webp")._encode(photo)
+    png = FakeImageProvider("png")._encode(photo)
+
+    assert len(webp) < len(png) / 2
+
+
+def test_endpoint_uses_configured_format(make_client, auth_headers):
+    client = make_client(openai_image_format="jpeg")
+
+    image = client.post("/v1/designs", json=PAYLOAD, headers=auth_headers).json()["images"][0]
+
+    assert image["mime_type"] == "image/jpeg"
+    assert Image.open(io.BytesIO(base64.b64decode(image["image_base64"]))).format == "JPEG"

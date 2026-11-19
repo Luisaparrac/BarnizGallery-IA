@@ -142,3 +142,39 @@ def test_endpoint_maps_rejection_to_400(app, client, auth_headers):
 
     assert response.status_code == 400
     assert response.json()["code"] == "content_rejected"
+
+
+@pytest.mark.parametrize(("image_format", "mime"), [("webp", "image/webp"), ("jpeg", "image/jpeg")])
+def test_compressed_formats_are_requested_and_reported(image_format, mime):
+    client = client_returning("aW1hZ2U=")
+    provider = OpenAIImageProvider(
+        client, "gpt-image-2", "medium", "1024x1024", image_format=image_format, compression=70
+    )
+
+    images = provider.generate("prompt", REQUEST, 1)
+
+    assert images[0].mime_type == mime
+    kwargs = client.images.generate.call_args.kwargs
+    assert kwargs["output_format"] == image_format
+    assert kwargs["output_compression"] == 70
+
+
+def test_png_does_not_send_compression():
+    client = client_returning("aW1hZ2U=")
+
+    make_provider(client).generate("prompt", REQUEST, 1)
+
+    assert "output_compression" not in client.images.generate.call_args.kwargs
+
+
+def test_factory_passes_format_to_openai_provider():
+    settings = build_settings(
+        image_provider="openai", openai_api_key="sk-test", openai_image_format="jpeg"
+    )
+
+    provider = ImageProviderFactory.create(settings)
+    client = client_returning("aW1hZ2U=")
+    provider._client = client
+    provider.generate("prompt", REQUEST, 1)
+
+    assert client.images.generate.call_args.kwargs["output_format"] == "jpeg"

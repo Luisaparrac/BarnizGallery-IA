@@ -17,6 +17,7 @@ import openai
 from openai import OpenAI
 
 from app.core.errors import ErrorCode, ServiceError
+from app.designs.image_format import MIME_TYPES, ImageFormat
 from app.designs.providers.image_provider import ImageProvider
 from app.schemas.designs import DesignRequest, GeneratedImage
 
@@ -29,17 +30,30 @@ class OpenAIImageProvider(ImageProvider):
     name = "openai"
     billable = True
 
-    def __init__(self, client: OpenAI, model: str, quality: str, size: str) -> None:
+    def __init__(
+        self,
+        client: OpenAI,
+        model: str,
+        quality: str,
+        size: str,
+        image_format: ImageFormat = "png",
+        compression: int = 80,
+    ) -> None:
         self._client = client
         self._model = model
         self._quality = quality
         self._size = size
+        self._format = image_format
+        self._compression = compression
 
     @property
     def model(self) -> str:
         return self._model
 
     def generate(self, prompt: str, request: DesignRequest, count: int) -> list[GeneratedImage]:
+        options = {"output_format": self._format}
+        if self._format != "png":
+            options["output_compression"] = self._compression
         try:
             response = self._client.images.generate(
                 model=self._model,
@@ -47,7 +61,7 @@ class OpenAIImageProvider(ImageProvider):
                 n=count,
                 quality=self._quality,
                 size=self._size,
-                output_format="png",
+                **options,
             )
         except openai.APITimeoutError as exc:
             logger.warning("OpenAI image timeout for request %s", request.request_id)
@@ -68,7 +82,7 @@ class OpenAIImageProvider(ImageProvider):
             raise self._provider_error(exc, request) from exc
 
         images = [
-            GeneratedImage(image_base64=item.b64_json, mime_type="image/png")
+            GeneratedImage(image_base64=item.b64_json, mime_type=MIME_TYPES[self._format])
             for item in (response.data or [])
             if item.b64_json
         ]

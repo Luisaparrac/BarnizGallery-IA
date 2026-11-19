@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     openai_image_model: str = "gpt-image-2"
     openai_image_quality: Literal["low", "medium", "high"] = "medium"
     openai_image_size: str = "1024x1024"
+    #: webp/jpeg weigh much less than png in base64; compression 0-100 (webp/jpeg only).
+    openai_image_format: Literal["webp", "jpeg", "png"] = "webp"
+    openai_image_compression: int = Field(default=80, ge=0, le=100)
     moderation_enabled: bool = True
     openai_moderation_model: str = "omni-moderation-latest"
 

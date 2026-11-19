@@ -27,6 +27,7 @@ class BillableFakeProvider(FakeImageProvider):
     billable = True
 
     def __init__(self, fail: bool = False) -> None:
+        super().__init__()
         self.fail = fail
 
     def generate(self, prompt, request, count):

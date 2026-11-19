@@ -19,7 +19,9 @@ class ImageProviderFactory:
     def create(settings: Settings) -> ImageProvider:
         match settings.image_provider:
             case "fake":
-                return FakeImageProvider()
+                return FakeImageProvider(
+                    settings.openai_image_format, settings.openai_image_compression
+                )
             case "openai":
                 client = OpenAI(
                     api_key=settings.openai_api_key.get_secret_value(),
@@ -31,6 +33,8 @@ class ImageProviderFactory:
                     model=settings.openai_image_model,
                     quality=settings.openai_image_quality,
                     size=settings.openai_image_size,
+                    image_format=settings.openai_image_format,
+                    compression=settings.openai_image_compression,
                 )
             case _:
                 raise ServiceError(
