@@ -96,16 +96,21 @@ class AccessLogMiddleware:
             await self.app(scope, receive, capture_status)
         finally:
             duration_ms = round((time.perf_counter() - start) * 1000, 1)
+            route = route_of(scope)
+            fields = current_fields()
             access_logger.info(
                 "request",
                 extra={
                     "method": scope.get("method"),
-                    "route": route_of(scope),
+                    "route": route,
                     "status": status,
                     "duration_ms": duration_ms,
-                    **current_fields(),
+                    **fields,
                 },
             )
+            metrics = getattr(getattr(scope.get("app"), "state", None), "metrics", None)
+            if metrics is not None:
+                metrics.record(route, status, duration_ms, fields)
 
 
 def route_of(scope: Scope) -> str:

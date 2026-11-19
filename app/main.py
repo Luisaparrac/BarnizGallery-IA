@@ -5,11 +5,12 @@ import os
 from fastapi import Depends, FastAPI
 
 from app import __version__
-from app.api import designs, health, pricing, recommendations
+from app.api import designs, health, metrics, pricing, recommendations
 from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import Settings, get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging_config import AccessLogMiddleware, setup_logging
+from app.core.metrics import MetricsRegistry
 from app.core.rate_limiter import SlidingWindowRateLimiter
 from app.core.request_context import RequestContextMiddleware
 from app.core.responses import Utf8JSONResponse
@@ -32,6 +33,7 @@ def create_app() -> FastAPI:
     )
     app.state.rate_limiter = SlidingWindowRateLimiter()
     app.state.image_budget = DailyImageBudget()
+    app.state.metrics = MetricsRegistry()
     register_error_handlers(app)
     app.add_middleware(
         BodySizeLimitMiddleware, max_bytes=lambda: current_settings(app).max_request_bytes
@@ -49,6 +51,7 @@ def create_app() -> FastAPI:
     app.include_router(designs.router, **protected)
     app.include_router(recommendations.router, **protected)
     app.include_router(pricing.router, **protected)
+    app.include_router(metrics.router, **protected)
     return app
 
 

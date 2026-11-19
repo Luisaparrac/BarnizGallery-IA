@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     max_request_bytes: int = Field(default=1_000_000, ge=1024)
     rate_limit_per_minute: int = Field(default=20, ge=1)
 
+    # Prices used only to *estimate* the cost in /v1/metrics (the OpenAI bill is the truth).
+    openai_image_cost_usd: float = Field(default=0.053, ge=0)
+    openai_text_input_usd_per_mtok: float = Field(default=0.10, ge=0)
+    openai_text_output_usd_per_mtok: float = Field(default=0.50, ge=0)
+
     #: Set by Render at runtime; shown in /health to know which commit is deployed.
     render_git_commit: str | None = None
 

@@ -9,11 +9,10 @@ restarts, so the OpenAI project should also have a spending limit.
 import math
 import threading
 from collections.abc import Callable
-from datetime import UTC, date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 from app.core.errors import ErrorCode, ServiceError
-
-COLOMBIA = timezone(timedelta(hours=-5), "America/Bogota")
+from app.core.timezones import COLOMBIA
 
 
 class DailyImageBudget:
