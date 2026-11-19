@@ -1,0 +1,25 @@
+# Entornos y secretos
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Herramientas
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editores y sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
