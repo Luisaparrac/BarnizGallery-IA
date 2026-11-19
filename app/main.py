@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI
 
 from app import __version__
 from app.api import designs, health, metrics, pricing, recommendations
+from app.api.openapi_docs import install_openapi
 from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import Settings, get_settings
 from app.core.errors import register_error_handlers
@@ -30,6 +31,13 @@ def create_app() -> FastAPI:
         description="Diseños, recomendaciones y precio sugerido para el Barniz de Pasto Mopa-Mopa.",
         version=__version__,
         default_response_class=Utf8JSONResponse,
+        openapi_tags=[
+            {"name": "health", "description": "Estado del servicio. No pide clave."},
+            {"name": "designs", "description": "Imágenes de propuesta para encargos."},
+            {"name": "recommendations", "description": "Obras según los gustos del cliente."},
+            {"name": "pricing", "description": "Precio sugerido para el artesano."},
+            {"name": "metrics", "description": "Contadores, latencia y costo estimado."},
+        ],
     )
     app.state.rate_limiter = SlidingWindowRateLimiter()
     app.state.image_budget = DailyImageBudget()
@@ -52,6 +60,7 @@ def create_app() -> FastAPI:
     app.include_router(recommendations.router, **protected)
     app.include_router(pricing.router, **protected)
     app.include_router(metrics.router, **protected)
+    install_openapi(app)
     return app
 
 

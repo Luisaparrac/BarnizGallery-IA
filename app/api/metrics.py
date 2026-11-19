@@ -4,13 +4,24 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 
+from app.api.openapi_docs import COMMON, error_responses
 from app.core.config import Settings, get_settings
 from app.schemas.metrics import MetricsResponse
 
 router = APIRouter(tags=["metrics"])
 
 
-@router.get("/metrics", response_model=MetricsResponse)
+@router.get(
+    "/metrics",
+    response_model=MetricsResponse,
+    summary="Métricas del servicio",
+    description=(
+        "Contadores por ruta, latencia promedio, imágenes del día y costo estimado de OpenAI "
+        "(con los precios configurados). Viven en memoria: se reinician si el servicio se "
+        "reinicia o se despierta en Render."
+    ),
+    responses=error_responses(*COMMON),
+)
 def metrics(
     request: Request, settings: Annotated[Settings, Depends(get_settings)]
 ) -> MetricsResponse:

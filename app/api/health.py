@@ -11,7 +11,12 @@ from app.schemas.health import HealthResponse
 router = APIRouter(tags=["health"])
 
 
-@router.get("/health", response_model=HealthResponse)
+@router.get(
+    "/health",
+    response_model=HealthResponse,
+    summary="Estado del servicio (sin clave)",
+    description="Versión, proveedores activos y commit desplegado en Render.",
+)
 def health(settings: Annotated[Settings, Depends(get_settings)]) -> HealthResponse:
     return HealthResponse(
         version=__version__,

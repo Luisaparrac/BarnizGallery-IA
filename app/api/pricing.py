@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from openai import OpenAI
 
+from app.api.openapi_docs import COMMON, error_responses
 from app.core.config import Settings, get_settings
 from app.pricing.llm_price_advisor import LlmPriceAdvisor
 from app.pricing.pricing_service import PricingService
@@ -36,7 +37,22 @@ def get_pricing_service(
     return PricingService(LlmPriceAdvisor(text_model))
 
 
-@router.post("/pricing/suggest", response_model=PricingResponse)
+@router.post(
+    "/pricing/suggest",
+    response_model=PricingResponse,
+    summary="Sugiere un precio a partir de piezas comparables",
+    description=(
+        "Mediana ponderada por parecido (forma, figuras, tamaño) con rango intercuartílico, "
+        "después de descartar precios atípicos (IQR). Si hay modelo de texto, ajusta dentro "
+        "del rango y redacta la explicación (`comparables+llm`).\n\n"
+        "- Exige al menos 3 comparables en la moneda pedida; si no, `422 not_enough_data`. "
+        "Nunca inventa un precio.\n"
+        "- `confidence` (`low`, `medium`, `high`) depende de cuántos comparables se usaron y "
+        "qué tan parecidos son.\n"
+        "- Es una sugerencia: el artesano decide."
+    ),
+    responses=error_responses(*COMMON, "not_enough_data"),
+)
 def suggest_price(
     request: PricingRequest,
     service: Annotated[PricingService, Depends(get_pricing_service)],

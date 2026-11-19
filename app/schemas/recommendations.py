@@ -3,7 +3,7 @@
 from enum import StrEnum
 from typing import Literal, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.codes import Code, CodeList, Currency
 
@@ -60,6 +60,39 @@ class Candidate(BaseModel):
 
 
 class RecommendationRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "profile": {
+                        "colors": ["rojo", "verde"],
+                        "shapes": ["bandeja"],
+                        "styles": ["tradicional"],
+                        "motifs": ["colibri"],
+                        "budget": {"min": 20, "max": 120, "currency": "USD"},
+                    },
+                    "interactions": [
+                        {"artwork_id": 5, "action": "VIEW", "duration_seconds": 40}
+                    ],
+                    "candidates": [
+                        {
+                            "artwork_id": 5,
+                            "store_id": 2,
+                            "colors": ["rojo", "amarillo"],
+                            "shape": "bandeja",
+                            "style": "tradicional",
+                            "motifs": ["colibri"],
+                            "price": 80,
+                            "currency": "USD",
+                            "popularity": 12,
+                        }
+                    ],
+                    "limit": 10,
+                }
+            ]
+        }
+    )
+
     profile: TasteProfile | None = None
     interactions: list[Interaction] = Field(default_factory=list, max_length=1000)
     candidates: list[Candidate] = Field(default_factory=list, max_length=2000)

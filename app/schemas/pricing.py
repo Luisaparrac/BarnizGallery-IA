@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.codes import Code, CodeList, Currency
 
@@ -34,6 +34,38 @@ class ComparablePiece(BaseModel):
 
 
 class PricingRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "piece": {
+                        "shape": "bandeja",
+                        "style": "tradicional",
+                        "colors": ["rojo"],
+                        "motifs": ["colibri"],
+                        "width_cm": 30,
+                        "height_cm": 30,
+                        "technique": "barniz",
+                        "work_hours": 20,
+                    },
+                    "comparables": [
+                        {
+                            "shape": "bandeja",
+                            "motifs": ["colibri"],
+                            "width_cm": 28,
+                            "height_cm": 28,
+                            "price": price,
+                            "currency": "USD",
+                            "sold": sold,
+                        }
+                        for price, sold in ((80, True), (95, True), (100, False), (115, False))
+                    ],
+                    "currency": "USD",
+                }
+            ]
+        }
+    )
+
     piece: PieceDescription
     comparables: list[ComparablePiece] = Field(default_factory=list, max_length=500)
     currency: Currency
