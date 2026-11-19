@@ -101,11 +101,12 @@ class AccessLogMiddleware:
             access_logger.info(
                 "request",
                 extra={
+                    # Service fields first: the request's own fields always win.
+                    **fields,
                     "method": scope.get("method"),
                     "route": route,
                     "status": status,
                     "duration_ms": duration_ms,
-                    **fields,
                 },
             )
             metrics = getattr(getattr(scope.get("app"), "state", None), "metrics", None)

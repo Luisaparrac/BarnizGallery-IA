@@ -57,7 +57,7 @@ class PricingService:
     def _response(
         estimate: PriceEstimate, price: float, method: str, explanation: str
     ) -> PricingResponse:
-        set_field("method", method)
+        set_field("pricing_method", method)
         return PricingResponse(
             suggested_price=price,
             min_price=estimate.min_price,

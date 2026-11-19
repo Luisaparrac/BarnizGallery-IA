@@ -79,7 +79,8 @@ def test_recommendation_and_pricing_lines(client, auth_headers, caplog):
     assert recommendations["route"] == "/v1/recommendations"
     assert recommendations["strategy"] == "popular"
     assert pricing["route"] == "/v1/pricing/suggest"
-    assert pricing["method"] == "comparables"
+    assert pricing["method"] == "POST"
+    assert pricing["pricing_method"] == "comparables"
 
 
 def test_unmatched_route_does_not_log_raw_path(client, caplog):
@@ -113,3 +114,21 @@ def test_route_template_hides_path_parameter_values():
 
     assert route_of(scope) == "/v1/orders/{id}"
     assert route_of({"path": "/v1/x"}) == "<unmatched>"
+
+
+def test_service_fields_cannot_override_request_fields(client, auth_headers, caplog, monkeypatch):
+    from app.recommendations import recommendation_service
+
+    def noisy_set_field(name, value):
+        for key in ("method", "route", "status", "duration_ms"):
+            real_set_field(key, "pisado")
+        real_set_field(name, value)
+
+    real_set_field = recommendation_service.set_field
+    monkeypatch.setattr(recommendation_service, "set_field", noisy_set_field)
+
+    client.post("/v1/recommendations", json={}, headers=auth_headers)
+
+    [line] = access_lines(caplog)
+    assert (line["method"], line["route"], line["status"]) == ("POST", "/v1/recommendations", 200)
+    assert isinstance(line["duration_ms"], float)
