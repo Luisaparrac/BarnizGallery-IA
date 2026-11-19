@@ -21,6 +21,7 @@ class ErrorCode(StrEnum):
     PROVIDER_ERROR = "provider_error"
     PROVIDER_TIMEOUT = "provider_timeout"
     FEATURE_DISABLED = "feature_disabled"
+    RATE_LIMITED = "rate_limited"
 
 
 STATUS_BY_CODE: dict[ErrorCode, int] = {
@@ -31,28 +32,36 @@ STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.PROVIDER_ERROR: 502,
     ErrorCode.PROVIDER_TIMEOUT: 504,
     ErrorCode.FEATURE_DISABLED: 503,
+    ErrorCode.RATE_LIMITED: 429,
 }
 
 
 class ServiceError(Exception):
     """Expected error that is returned to the caller in the common format."""
 
-    def __init__(self, code: ErrorCode, message: str) -> None:
+    def __init__(
+        self, code: ErrorCode, message: str, headers: dict[str, str] | None = None
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+        self.headers = headers or {}
 
     @property
     def status_code(self) -> int:
         return STATUS_BY_CODE[self.code]
 
 
-def error_response(status_code: int, code: ErrorCode, message: str) -> Utf8JSONResponse:
-    return Utf8JSONResponse(status_code=status_code, content={"code": code, "message": message})
+def error_response(
+    status_code: int, code: ErrorCode, message: str, headers: dict[str, str] | None = None
+) -> Utf8JSONResponse:
+    return Utf8JSONResponse(
+        status_code=status_code, content={"code": code, "message": message}, headers=headers
+    )
 
 
 async def _handle_service_error(_: Request, exc: ServiceError) -> Utf8JSONResponse:
-    return error_response(exc.status_code, exc.code, exc.message)
+    return error_response(exc.status_code, exc.code, exc.message, exc.headers)
 
 
 async def _handle_validation_error(_: Request, exc: RequestValidationError) -> Utf8JSONResponse:
