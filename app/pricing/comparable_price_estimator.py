@@ -20,6 +20,7 @@ inventing a price.
 """
 
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 
@@ -39,6 +40,22 @@ DEFAULT_MIN_COMPARABLES = 3
 IQR_FENCE = 1.5
 MIN_FOR_OUTLIERS = 4
 
+Confidence = Literal["low", "medium", "high"]
+
+
+def confidence_level(comparables_used: int, average_similarity: float) -> Confidence:
+    """How much to trust the suggestion: more and more similar comparables -> higher.
+
+    - ``high``: 8 or more comparables, average similarity of at least 70 %.
+    - ``medium``: 5 or more comparables, average similarity of at least 50 %.
+    - ``low``: anything else (few or not very similar comparables).
+    """
+    if comparables_used >= 8 and average_similarity >= 0.7:
+        return "high"
+    if comparables_used >= 5 and average_similarity >= 0.5:
+        return "medium"
+    return "low"
+
 
 @dataclass(frozen=True)
 class PriceEstimate:
@@ -50,6 +67,7 @@ class PriceEstimate:
     sold_count: int
     average_similarity: float
     outliers_removed: int = 0
+    confidence: Confidence = "low"
     #: The comparables actually used (same currency, without outliers).
     comparables: tuple[ComparablePiece, ...] = ()
 
@@ -126,6 +144,7 @@ class ComparablePriceEstimator:
         median = _weighted_quantile(prices, weights, 0.5)
         high = _weighted_quantile(prices, weights, 0.75)
 
+        average_similarity = round(float(similarities.mean()), 2)
         return PriceEstimate(
             suggested_price=round(median, 2),
             min_price=round(low, 2),
@@ -133,7 +152,8 @@ class ComparablePriceEstimator:
             currency=currency,
             comparables_used=len(usable),
             sold_count=sum(item.sold for item in usable),
-            average_similarity=round(float(similarities.mean()), 2),
+            average_similarity=average_similarity,
             outliers_removed=removed,
+            confidence=confidence_level(len(usable), average_similarity),
             comparables=tuple(usable),
         )

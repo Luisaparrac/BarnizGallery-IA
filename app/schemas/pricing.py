@@ -46,3 +46,5 @@ class PricingResponse(BaseModel):
     currency: str
     method: Literal["comparables", "comparables+llm"]
     explanation: str
+    #: low / medium / high, from how many comparables were used and how similar they are.
+    confidence: Literal["low", "medium", "high"]

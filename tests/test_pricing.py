@@ -11,7 +11,11 @@ import pytest
 
 from app.api.pricing import get_text_model
 from app.core.errors import ErrorCode, ServiceError
-from app.pricing.comparable_price_estimator import ComparablePriceEstimator, remove_outliers
+from app.pricing.comparable_price_estimator import (
+    ComparablePriceEstimator,
+    confidence_level,
+    remove_outliers,
+)
 from app.pricing.llm_price_advisor import LlmPriceAdvisor
 from app.pricing.pricing_service import PricingService
 from app.pricing.text_models.disabled_text_model import DisabledTextModel
@@ -290,6 +294,7 @@ def test_endpoint_returns_contract(client, auth_headers):
         "currency": "USD",
         "method": "comparables",
         "explanation": response.json()["explanation"],
+        "confidence": "medium",
     }
 
 
@@ -382,3 +387,44 @@ def test_text_model_never_sees_discarded_outliers():
     payload = json.loads(model.calls[0]["prompt"])
     assert all(item["price"] < 10_000 for item in payload["comparables"])
     assert payload["range"]["comparables_used"] == 6
+
+
+# --- Confidence -----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("used", "similarity", "expected"),
+    [
+        (8, 0.7, "high"),
+        (12, 0.95, "high"),
+        (8, 0.69, "medium"),
+        (5, 0.5, "medium"),
+        (7, 0.9, "medium"),
+        (4, 0.99, "low"),
+        (20, 0.49, "low"),
+        (3, 1.0, "low"),
+    ],
+)
+def test_confidence_level(used, similarity, expected):
+    assert confidence_level(used, similarity) == expected
+
+
+def test_confidence_grows_with_more_similar_comparables():
+    service = PricingService(LlmPriceAdvisor(DisabledTextModel()))
+
+    few = service.suggest(make_request(SIX[:3]))
+    some = service.suggest(make_request(SIX))
+    many = service.suggest(make_request(SIX + SIX[:3]))
+    different = service.suggest(
+        make_request([comparable(100 + n, shape="caja", motifs=["aves"]) for n in range(9)])
+    )
+
+    assert (few.confidence, some.confidence, many.confidence) == ("low", "medium", "high")
+    assert different.confidence == "low"
+    assert "Confianza alta." in many.explanation
+
+
+def test_llm_answer_keeps_the_confidence():
+    service, _ = service_with({"suggested_price": 100, "explanation": "x"})
+
+    assert service.suggest(make_request(SIX)).confidence == "medium"

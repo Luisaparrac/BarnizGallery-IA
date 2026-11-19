@@ -21,6 +21,8 @@ from app.schemas.pricing import PricingRequest, PricingResponse
 
 logger = logging.getLogger(__name__)
 
+CONFIDENCE_ES = {"low": "baja", "medium": "media", "high": "alta"}
+
 
 def _money(value: float) -> str:
     return f"{value:,.0f}" if value == int(value) else f"{value:,.2f}"
@@ -63,6 +65,7 @@ class PricingService:
             currency=estimate.currency,
             method=method,
             explanation=explanation,
+            confidence=estimate.confidence,
         )
 
     @staticmethod
@@ -78,5 +81,6 @@ class PricingService:
             f"con un parecido promedio del {estimate.average_similarity:.0%}.{outliers} "
             f"La mitad de esos precios está entre {_money(estimate.min_price)} y "
             f"{_money(estimate.max_price)} {estimate.currency}. "
+            f"Confianza {CONFIDENCE_ES[estimate.confidence]}. "
             "Es una sugerencia: el precio final lo decides tú."
         )
