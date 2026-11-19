@@ -24,13 +24,31 @@ def current_settings(app: FastAPI) -> Settings:
     return app.dependency_overrides.get(get_settings, get_settings)()
 
 
-def create_app() -> FastAPI:
-    """Create the FastAPI application."""
+def env_flag(name: str, default: bool) -> bool:
+    """Read a boolean environment variable (``true``/``false``, ``1``/``0``, ``yes``/``no``)."""
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def create_app(docs_enabled: bool | None = None) -> FastAPI:
+    """Create the FastAPI application.
+
+    ``DOCS_ENABLED=false`` hides ``/docs``, ``/redoc`` and ``/openapi.json`` (for
+    production). It is read from the environment here, like ``LOG_LEVEL``, so creating the
+    app never needs ``.env``.
+    """
+    if docs_enabled is None:
+        docs_enabled = env_flag("DOCS_ENABLED", default=True)
     app = FastAPI(
         title="MUSEO - Servicio de IA",
         description="Diseños, recomendaciones y precio sugerido para el Barniz de Pasto Mopa-Mopa.",
         version=__version__,
         default_response_class=Utf8JSONResponse,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
         openapi_tags=[
             {"name": "health", "description": "Estado del servicio. No pide clave."},
             {"name": "designs", "description": "Imágenes de propuesta para encargos."},

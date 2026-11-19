@@ -1,3 +1,8 @@
+import pytest
+from fastapi.testclient import TestClient
+
+from app.main import create_app, env_flag
+
 MEDIA = "application/json; charset=utf-8"
 
 
@@ -42,3 +47,38 @@ def test_no_misleading_default_422(client):
 
 def test_docs_page_loads(client):
     assert client.get("/docs").status_code == 200
+
+
+def test_docs_can_be_disabled():
+    client = TestClient(create_app(docs_enabled=False))
+
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert client.get(path).status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, True),
+        ("", True),
+        ("true", True),
+        ("1", True),
+        ("false", False),
+        ("0", False),
+        ("No", False),
+        ("off", False),
+    ],
+)
+def test_docs_enabled_env_flag(monkeypatch, value, expected):
+    if value is None:
+        monkeypatch.delenv("DOCS_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("DOCS_ENABLED", value)
+
+    assert env_flag("DOCS_ENABLED", default=True) is expected
+
+
+def test_docs_disabled_from_environment(monkeypatch):
+    monkeypatch.setenv("DOCS_ENABLED", "false")
+
+    assert TestClient(create_app()).get("/docs").status_code == 404
