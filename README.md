@@ -1,5 +1,7 @@
 # MUSEO — Servicio de IA
 
+[![CI](https://github.com/Luisaparrac/BarnizGallery-IA/actions/workflows/ci.yml/badge.svg)](https://github.com/Luisaparrac/BarnizGallery-IA/actions/workflows/ci.yml)
+
 Servicio de inteligencia artificial de **MUSEO**, la galería 3D y tienda del Barniz de Pasto
 Mopa-Mopa. Proyecto final del curso *Patrones de Software* (Universidad Cooperativa de Colombia).
 
@@ -71,7 +73,10 @@ El archivo `.env` nunca se sube al repositorio; está en `.gitignore`.
 ```bash
 pytest
 ruff check .
+pip-audit -r requirements.txt   # vulnerabilidades conocidas en las dependencias
 ```
+
+GitHub Actions (`.github/workflows/ci.yml`) corre lo mismo en cada push y pull request.
 
 Las pruebas **nunca llaman a OpenAI**: usan el proveedor simulado o mocks, y arman la
 configuración en memoria (no leen tu `.env`).
