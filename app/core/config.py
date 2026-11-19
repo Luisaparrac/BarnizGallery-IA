@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     reco_weight_motif: float = Field(default=1.3, ge=0)
     reco_budget_share: float = Field(default=0.15, ge=0, le=1)
     reco_profile_share: float = Field(default=0.6, ge=0, le=1)
+    reco_diversity: float = Field(default=0.3, ge=0, le=1)
 
     # Prices used only to *estimate* the cost in /v1/metrics (the OpenAI bill is the truth).
     openai_image_cost_usd: float = Field(default=0.053, ge=0)

@@ -7,6 +7,7 @@ still applying the budget adjustment if the profile only has a budget.
 import numpy as np
 
 from app.recommendations.budget import budget_fit
+from app.recommendations.diversity import Ranked, mmr_rerank
 from app.recommendations.explanation import explain
 from app.recommendations.feature_vectorizer import FeatureVectorizer
 from app.recommendations.strategies.recommendation_strategy import RecommendationStrategy
@@ -25,21 +26,22 @@ class PopularityStrategy(RecommendationStrategy):
         budget = request.profile.budget if request.profile else None
         top = max((candidate.popularity for candidate in request.candidates), default=0.0)
 
-        items = []
+        ranked = []
         for candidate in request.candidates:
             popularity = candidate.popularity / top if top > 0 else 0.0
             fit = budget_fit(budget, candidate)
             score = self.blend(popularity, fit)
             reasons = Reasons(budget=None if fit is None else fit == 1.0)
-            items.append(
-                RecommendationItem(
-                    artwork_id=candidate.artwork_id,
-                    store_id=candidate.store_id,
-                    score=round(score, 4),
-                    reasons=reasons,
-                    explanation=explain(reasons, candidate, popular=True),
+            ranked.append(
+                Ranked(
+                    RecommendationItem(
+                        artwork_id=candidate.artwork_id,
+                        store_id=candidate.store_id,
+                        score=round(score, 4),
+                        reasons=reasons,
+                        explanation=explain(reasons, candidate, popular=True),
+                    ),
+                    candidate.popularity,
                 )
             )
-        popularity_by_id = {c.artwork_id: c.popularity for c in request.candidates}
-        items.sort(key=lambda i: (-i.score, -popularity_by_id[i.artwork_id], i.artwork_id))
-        return items[: request.limit]
+        return mmr_rerank(ranked, request.limit, self.weights.diversity)

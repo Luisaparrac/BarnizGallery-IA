@@ -3,7 +3,7 @@
 Pattern: **Strategy**. ``RecommendationService`` picks one strategy per request and calls
 ``rank``; it never knows how the score is computed. Concrete strategies only decide how to
 build the *user vector* (explicit tastes, interactions, popularity); ``rank`` shares the
-scoring, the budget adjustment, the reasons and the deterministic ordering.
+scoring, the budget adjustment, the reasons and the diversity-aware ordering (MMR).
 """
 
 from abc import ABC, abstractmethod
@@ -12,6 +12,7 @@ from typing import ClassVar
 import numpy as np
 
 from app.recommendations.budget import budget_fit
+from app.recommendations.diversity import Ranked, mmr_rerank
 from app.recommendations.explanation import explain
 from app.recommendations.feature_vectorizer import FeatureVectorizer
 from app.recommendations.recommendation_weights import DEFAULT_WEIGHTS, RecommendationWeights
@@ -42,7 +43,7 @@ class RecommendationStrategy(ABC):
         user = self.user_vector(request, vectorizer)
         budget = request.profile.budget if request.profile else None
 
-        scored: list[tuple[float, float, RecommendationItem]] = []
+        ranked: list[Ranked] = []
         for candidate in request.candidates:
             similarity = vectorizer.similarity(user, vectorizer.candidate_vector(candidate))
             fit = budget_fit(budget, candidate)
@@ -56,8 +57,6 @@ class RecommendationStrategy(ABC):
                 reasons=reasons,
                 explanation=explain(reasons, candidate),
             )
-            scored.append((item.score, candidate.popularity, item))
+            ranked.append(Ranked(item, candidate.popularity))
 
-        # Highest score first; ties by popularity, then by id, so the order is stable.
-        scored.sort(key=lambda entry: (-entry[0], -entry[1], entry[2].artwork_id))
-        return [item for _, _, item in scored[: request.limit]]
+        return mmr_rerank(ranked, request.limit, self.weights.diversity)

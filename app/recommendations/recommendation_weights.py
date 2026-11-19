@@ -1,7 +1,8 @@
 """Tunable weights of the recommender, read from the environment.
 
 Defaults reproduce the original behaviour; ``Settings`` lets them be changed without
-touching code (``RECO_WEIGHT_*``, ``RECO_BUDGET_SHARE``, ``RECO_PROFILE_SHARE``).
+touching code (``RECO_WEIGHT_*``, ``RECO_BUDGET_SHARE``, ``RECO_PROFILE_SHARE``,
+``RECO_DIVERSITY``).
 """
 
 from dataclasses import dataclass
@@ -20,6 +21,8 @@ class RecommendationWeights:
     budget_share: float = 0.15
     #: In the hybrid strategy, share of the declared profile vs. inferred taste.
     profile_share: float = 0.6
+    #: MMR diversity by workshop: 0 = order by relevance only, 1 = maximum variety.
+    diversity: float = 0.3
 
     @property
     def groups(self) -> dict[str, float]:
@@ -34,6 +37,7 @@ class RecommendationWeights:
             motif=settings.reco_weight_motif,
             budget_share=settings.reco_budget_share,
             profile_share=settings.reco_profile_share,
+            diversity=settings.reco_diversity,
         )
 
 

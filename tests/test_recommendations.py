@@ -3,6 +3,7 @@ import pytest
 from app.recommendations.budget import budget_fit
 from app.recommendations.feature_vectorizer import FeatureVectorizer
 from app.recommendations.recommendation_service import RecommendationService
+from app.recommendations.recommendation_weights import RecommendationWeights
 from app.recommendations.strategies.content_based_strategy import ContentBasedStrategy
 from app.recommendations.strategies.hybrid_strategy import HybridStrategy, interaction_weight
 from app.recommendations.strategies.popularity_strategy import PopularityStrategy
@@ -13,6 +14,7 @@ from app.schemas.recommendations import (
     RecommendationRequest,
     TasteProfile,
 )
+from tests.conftest import build_settings
 
 TRAY = {
     "artwork_id": 5,
@@ -47,6 +49,8 @@ PLATE = {
     "currency": "USD",
     "popularity": 1,
 }
+NO_DIVERSITY = RecommendationWeights(diversity=0)
+
 PROFILE = {
     "colors": ["rojo"],
     "shapes": ["bandeja"],
@@ -155,7 +159,7 @@ def test_budget_min_greater_than_max_is_invalid():
 
 
 def test_content_strategy_ranks_by_tastes_and_explains():
-    items = ContentBasedStrategy().rank(make_request(profile=PROFILE))
+    items = ContentBasedStrategy(NO_DIVERSITY).rank(make_request(profile=PROFILE))
 
     assert [item.artwork_id for item in items] == [5, 7, 6]
     best = items[0]
@@ -295,3 +299,70 @@ def test_endpoint_rejects_invalid_input(client, auth_headers, body):
 
     assert response.status_code == 400
     assert response.json()["code"] == "invalid_request"
+
+
+# --- Diversity (MMR) ------------------------------------------------------------------
+
+
+def test_diversity_moves_another_workshop_up():
+    # TRAY and PLATE share workshop 2; BOX is from workshop 3.
+    plain = ContentBasedStrategy(NO_DIVERSITY).rank(make_request(profile=PROFILE))
+    diverse = ContentBasedStrategy().rank(make_request(profile=PROFILE))
+
+    assert [item.artwork_id for item in plain] == [5, 7, 6]
+    assert [item.artwork_id for item in diverse] == [5, 6, 7]
+
+
+def test_diversity_keeps_relevance_scores():
+    plain = {
+        i.artwork_id: i.score
+        for i in ContentBasedStrategy(NO_DIVERSITY).rank(make_request(profile=PROFILE))
+    }
+    diverse = {
+        i.artwork_id: i.score for i in ContentBasedStrategy().rank(make_request(profile=PROFILE))
+    }
+
+    assert plain == diverse
+
+
+def test_one_workshop_cannot_fill_the_top():
+    # Five identical pieces from workshop 9 and an almost identical one (no motif) from
+    # workshop 4: MMR brings the other workshop up instead of a third duplicate.
+    same_store = [{**TRAY, "artwork_id": 100 + n, "store_id": 9} for n in range(5)]
+    other = {**TRAY, "artwork_id": 200, "store_id": 4, "motifs": []}
+    request = make_request(profile=PROFILE, candidates=[*same_store, other], limit=3)
+
+    plain = ContentBasedStrategy(NO_DIVERSITY).rank(request)
+    diverse = ContentBasedStrategy().rank(request)
+
+    assert {item.store_id for item in plain} == {9}
+    assert {item.store_id for item in diverse} == {9, 4}
+    assert diverse[1].artwork_id == 200
+
+
+def test_items_without_store_are_not_penalized():
+    no_store = [{**TRAY, "artwork_id": 300 + n, "store_id": None} for n in range(3)]
+    other = {**PLATE, "artwork_id": 400, "store_id": 4}
+    request = make_request(profile=PROFILE, candidates=[*no_store, other], limit=3)
+
+    items = ContentBasedStrategy().rank(request)
+
+    assert [item.artwork_id for item in items] == [300, 301, 302]
+
+
+def test_maximum_diversity_shows_one_per_workshop_first():
+    weights = RecommendationWeights(diversity=1.0)
+    candidates = [
+        {**TRAY, "artwork_id": 1, "store_id": 1},
+        {**TRAY, "artwork_id": 2, "store_id": 1},
+        {**PLATE, "artwork_id": 3, "store_id": 2},
+        {**BOX, "artwork_id": 4, "store_id": 3},
+    ]
+
+    items = ContentBasedStrategy(weights).rank(make_request(profile=PROFILE, candidates=candidates))
+
+    assert [item.store_id for item in items[:3]] == [1, 2, 3]
+
+
+def test_diversity_comes_from_settings():
+    assert RecommendationWeights.from_settings(build_settings(reco_diversity=0.8)).diversity == 0.8
