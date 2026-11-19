@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.core.config import Settings, get_settings
 from app.designs.design_service import DesignService
@@ -12,8 +12,12 @@ from app.schemas.designs import DesignRequest, DesignResponse
 router = APIRouter(tags=["designs"])
 
 
-def get_design_service(settings: Annotated[Settings, Depends(get_settings)]) -> DesignService:
-    return DesignService(settings, ImageProviderFactory.create(settings))
+def get_design_service(
+    request: Request, settings: Annotated[Settings, Depends(get_settings)]
+) -> DesignService:
+    return DesignService(
+        settings, ImageProviderFactory.create(settings), request.app.state.image_budget
+    )
 
 
 # Sync route on purpose: providers are blocking, so FastAPI runs it in its thread pool.

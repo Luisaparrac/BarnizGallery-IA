@@ -22,6 +22,7 @@ class ErrorCode(StrEnum):
     PROVIDER_TIMEOUT = "provider_timeout"
     FEATURE_DISABLED = "feature_disabled"
     RATE_LIMITED = "rate_limited"
+    BUDGET_EXCEEDED = "budget_exceeded"
 
 
 STATUS_BY_CODE: dict[ErrorCode, int] = {
@@ -33,6 +34,7 @@ STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.PROVIDER_TIMEOUT: 504,
     ErrorCode.FEATURE_DISABLED: 503,
     ErrorCode.RATE_LIMITED: 429,
+    ErrorCode.BUDGET_EXCEEDED: 429,
 }
 
 

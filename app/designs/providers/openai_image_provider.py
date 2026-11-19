@@ -27,6 +27,7 @@ REJECTION_CODES = {"moderation_blocked", "content_policy_violation"}
 
 class OpenAIImageProvider(ImageProvider):
     name = "openai"
+    billable = True
 
     def __init__(self, client: OpenAI, model: str, quality: str, size: str) -> None:
         self._client = client

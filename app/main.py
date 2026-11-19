@@ -10,6 +10,7 @@ from app.core.errors import register_error_handlers
 from app.core.rate_limiter import SlidingWindowRateLimiter
 from app.core.responses import Utf8JSONResponse
 from app.core.security import enforce_rate_limit, require_api_key
+from app.designs.daily_image_budget import DailyImageBudget
 
 
 def current_settings(app: FastAPI) -> Settings:
@@ -26,6 +27,7 @@ def create_app() -> FastAPI:
         default_response_class=Utf8JSONResponse,
     )
     app.state.rate_limiter = SlidingWindowRateLimiter()
+    app.state.image_budget = DailyImageBudget()
     register_error_handlers(app)
     app.add_middleware(
         BodySizeLimitMiddleware, max_bytes=lambda: current_settings(app).max_request_bytes

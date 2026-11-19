@@ -9,6 +9,7 @@ import pytest
 
 from app.api.designs import get_design_service
 from app.core.errors import ErrorCode, ServiceError
+from app.designs.daily_image_budget import DailyImageBudget
 from app.designs.design_service import DesignService
 from app.designs.image_provider_factory import ImageProviderFactory
 from app.designs.providers.openai_image_provider import OpenAIImageProvider
@@ -130,7 +131,7 @@ def test_endpoint_maps_rejection_to_400(app, client, auth_headers):
     exc = status_error(openai.BadRequestError, 400, "moderation_blocked", "Rejected.")
     provider = make_provider(client_raising(exc))
     app.dependency_overrides[get_design_service] = lambda: DesignService(
-        build_settings(), provider
+        build_settings(), provider, DailyImageBudget()
     )
 
     response = client.post(

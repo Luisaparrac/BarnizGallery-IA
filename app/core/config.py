@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     provider_timeout_seconds: float = Field(default=90, gt=0)
     max_images_per_request: int = Field(default=2, ge=1)
+    daily_image_limit: int = Field(default=30, ge=0)
     max_request_bytes: int = Field(default=1_000_000, ge=1024)
     rate_limit_per_minute: int = Field(default=20, ge=1)
 

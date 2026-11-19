@@ -13,6 +13,8 @@ from app.schemas.designs import DesignRequest, GeneratedImage
 class ImageProvider(ABC):
     #: Value reported in the response's ``provider`` field.
     name: str
+    #: Whether each image costs money (counts against ``DAILY_IMAGE_LIMIT``).
+    billable: bool = False
 
     @property
     @abstractmethod
