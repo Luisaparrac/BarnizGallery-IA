@@ -37,7 +37,9 @@ class PricingService:
 
         if self._advisor.enabled:
             try:
-                advice = self._advisor.advise(request.piece, request.comparables, estimate)
+                # Only the comparables actually used: never the discarded outliers.
+                comparables = list(estimate.comparables)
+                advice = self._advisor.advise(request.piece, comparables, estimate)
             except ServiceError as exc:
                 logger.warning("Price advisor failed (%s); using comparables only", exc.code)
             else:
@@ -66,9 +68,14 @@ class PricingService:
     @staticmethod
     def _explain(estimate: PriceEstimate) -> str:
         sold = f", {estimate.sold_count} ya vendidas" if estimate.sold_count else ""
+        removed = estimate.outliers_removed
+        outliers = ""
+        if removed:
+            noun = "precio atípico" if removed == 1 else "precios atípicos"
+            outliers = f" Se descartaron {removed} {noun}."
         return (
             f"Basado en {estimate.comparables_used} piezas parecidas{sold}, "
-            f"con un parecido promedio del {estimate.average_similarity:.0%}. "
+            f"con un parecido promedio del {estimate.average_similarity:.0%}.{outliers} "
             f"La mitad de esos precios está entre {_money(estimate.min_price)} y "
             f"{_money(estimate.max_price)} {estimate.currency}. "
             "Es una sugerencia: el precio final lo decides tú."

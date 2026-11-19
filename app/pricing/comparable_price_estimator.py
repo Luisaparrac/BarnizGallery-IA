@@ -8,7 +8,12 @@ more the more it resembles the piece:
 - shared motifs, Jaccard index (25 %),
 - similar size, ratio of the areas (30 %),
 
-and sold pieces weigh 25 % more, because their price was accepted by a buyer. Only
+and sold pieces weigh 25 % more, because their price was accepted by a buyer.
+
+Before weighting, **price outliers are removed** with Tukey's rule: prices outside
+``[Q1 - 1.5·IQR, Q3 + 1.5·IQR]`` are discarded (only with 4 or more comparables, and only
+if at least the minimum number remains). A typo such as 10000 instead of 100 no longer
+drags the suggestion. Only
 comparables in the requested currency are used: prices are never converted. With fewer
 than ``min_comparables`` usable pieces it raises ``not_enough_data`` instead of
 inventing a price.
@@ -30,6 +35,9 @@ NEUTRAL_SIMILARITY = 0.5
 MIN_WEIGHT = 0.1
 SOLD_BONUS = 1.25
 DEFAULT_MIN_COMPARABLES = 3
+#: Tukey's fences: values beyond 1.5 interquartile ranges from the quartiles are outliers.
+IQR_FENCE = 1.5
+MIN_FOR_OUTLIERS = 4
 
 
 @dataclass(frozen=True)
@@ -41,6 +49,9 @@ class PriceEstimate:
     comparables_used: int
     sold_count: int
     average_similarity: float
+    outliers_removed: int = 0
+    #: The comparables actually used (same currency, without outliers).
+    comparables: tuple[ComparablePiece, ...] = ()
 
 
 def _area(width: float | None, height: float | None) -> float | None:
@@ -53,6 +64,22 @@ def _weighted_quantile(values: np.ndarray, weights: np.ndarray, quantile: float)
     cumulative = np.cumsum(weights[order]) / weights.sum()
     position = int(np.searchsorted(cumulative, quantile - 1e-9))
     return float(values[order][min(position, len(values) - 1)])
+
+
+def remove_outliers(
+    comparables: list[ComparablePiece], keep_at_least: int
+) -> tuple[list[ComparablePiece], int]:
+    """Drop prices outside Tukey's fences; return the kept pieces and how many were dropped."""
+    if len(comparables) < MIN_FOR_OUTLIERS:
+        return comparables, 0
+    prices = np.array([item.price for item in comparables], dtype=float)
+    q1, q3 = np.percentile(prices, [25, 75])
+    spread = q3 - q1
+    low, high = q1 - IQR_FENCE * spread, q3 + IQR_FENCE * spread
+    kept = [item for item in comparables if low <= item.price <= high]
+    if len(kept) < keep_at_least:
+        return comparables, 0
+    return kept, len(comparables) - len(kept)
 
 
 class ComparablePriceEstimator:
@@ -88,6 +115,7 @@ class ComparablePriceEstimator:
                 f"Se necesitan al menos {self._min_comparables} piezas comparables en {currency} "
                 f"para sugerir un precio; llegaron {len(usable)}.",
             )
+        usable, removed = remove_outliers(usable, keep_at_least=self._min_comparables)
 
         similarities = np.array([self.similarity(piece, item) for item in usable])
         weights = MIN_WEIGHT + (1 - MIN_WEIGHT) * similarities
@@ -106,4 +134,6 @@ class ComparablePriceEstimator:
             comparables_used=len(usable),
             sold_count=sum(item.sold for item in usable),
             average_similarity=round(float(similarities.mean()), 2),
+            outliers_removed=removed,
+            comparables=tuple(usable),
         )

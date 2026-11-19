@@ -11,7 +11,7 @@ import pytest
 
 from app.api.pricing import get_text_model
 from app.core.errors import ErrorCode, ServiceError
-from app.pricing.comparable_price_estimator import ComparablePriceEstimator
+from app.pricing.comparable_price_estimator import ComparablePriceEstimator, remove_outliers
 from app.pricing.llm_price_advisor import LlmPriceAdvisor
 from app.pricing.pricing_service import PricingService
 from app.pricing.text_models.disabled_text_model import DisabledTextModel
@@ -332,3 +332,53 @@ def test_endpoint_rejects_invalid_input(client, auth_headers, body):
 
     assert response.status_code == 400
     assert response.json()["code"] == "invalid_request"
+
+
+# --- Outliers (IQR) -------------------------------------------------------------------
+
+
+def test_outlier_price_is_discarded():
+    with_typo = [*SIX, comparable(10_000, True)]  # someone typed 10000 instead of 100
+
+    response = PricingService(LlmPriceAdvisor(DisabledTextModel())).suggest(
+        make_request(with_typo)
+    )
+
+    assert response.suggested_price == 95
+    assert response.max_price <= 120
+    assert "Se descartaron 1 precio atípico." in response.explanation
+    assert "6 piezas parecidas" in response.explanation
+
+
+def test_remove_outliers_uses_tukey_fences():
+    pieces = [ComparablePiece(**comparable(price)) for price in (90, 95, 100, 105, 110, 400)]
+
+    kept, removed = remove_outliers(pieces, keep_at_least=3)
+
+    assert removed == 1
+    assert sorted(item.price for item in kept) == [90, 95, 100, 105, 110]
+
+
+def test_outliers_are_kept_when_too_few_comparables_remain():
+    pieces = [ComparablePiece(**comparable(price)) for price in (100, 100, 100, 900)]
+
+    kept, removed = remove_outliers(pieces, keep_at_least=4)
+
+    assert removed == 0
+    assert len(kept) == 4
+
+
+def test_no_outlier_removal_with_three_comparables():
+    pieces = [ComparablePiece(**comparable(price)) for price in (10, 100, 10_000)]
+
+    assert remove_outliers(pieces, keep_at_least=3) == (pieces, 0)
+
+
+def test_text_model_never_sees_discarded_outliers():
+    service, model = service_with({"suggested_price": 100, "explanation": "x"})
+
+    service.suggest(make_request([*SIX, comparable(10_000, True)]))
+
+    payload = json.loads(model.calls[0]["prompt"])
+    assert all(item["price"] < 10_000 for item in payload["comparables"])
+    assert payload["range"]["comparables_used"] == 6
