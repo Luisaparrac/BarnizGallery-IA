@@ -205,24 +205,31 @@ Salida:
 
 | Pieza | Paquete | Estado |
 |---|---|---|
-| `AiTextClient` (`complete(systemPrompt, userPrompt)`, `isEnabled()`) | `com.barnizgallery.backend.patterns.adapter` | **No se toca** |
-| `DisabledAiClient` | `com.barnizgallery.backend.patterns.adapter` | **No se toca** (sigue con su `@Component`) |
-| `AiStrategy` | (recomendaciones) | **No se toca** |
-| `AiServiceGateway` | `com.barnizgallery.backend.patterns.adapter` | **Nueva** interfaz para este servicio |
-| `AiServiceClient` | `com.barnizgallery.backend.patterns.adapter` | **Nueva**: implementa `AiServiceGateway` con `RestClient` |
-| `DisabledAiServiceGateway` | `com.barnizgallery.backend.patterns.adapter` | **Nueva**: se usa cuando no hay `AI_SERVICE_URL` |
-| `AiServiceRecommendationStrategy` (`"ai-service"`) | junto a `AiStrategy` | **Nueva** estrategia en `RecommendationStrategyResolver` |
-| `AiFacade.suggestBasePrice` | `com.barnizgallery.backend.patterns.facade` | Usa el gateway si está disponible |
+| `AiTextClient` (`complete(systemPrompt, userPrompt)`, `isEnabled()`) | `patterns.adapter` | **No se toca** |
+| `DisabledAiClient` | `patterns.adapter` | **No se toca** (sigue con su `@Component`) |
+| `AiStrategy` | `patterns.strategy` | **No se toca** |
+| `HybridStrategy` (`"hybrid"`, la de por defecto) | `patterns.strategy` | **No se toca**; es el respaldo de la nueva estrategia |
+| `AiServiceGateway` | `patterns.adapter` | **Nueva** interfaz para este servicio |
+| `AiServiceClient` | `patterns.adapter` | **Nueva**: implementa `AiServiceGateway` con `RestClient` |
+| `DisabledAiServiceGateway` | `patterns.adapter` | **Nueva**: se usa cuando no hay `AI_SERVICE_URL` |
+| `AiServiceStrategy` (`"ai-service"`) | `patterns.strategy` | **Nueva** estrategia de recomendación |
+| `AiFacade.suggestBasePrice(Artwork)` | `patterns.facade` | Usa el gateway y deja el método actual como respaldo |
+| `AiFacade.isAiEnabled()` | `patterns.facade` | `true` si `AiTextClient` **o** `AiServiceGateway` están disponibles |
+
+Todos los paquetes cuelgan de `com.barnizgallery.backend`.
 
 `AiTextClient` es para texto libre (`complete`), y este servicio no tiene texto libre: expone
 diseños, recomendaciones y precio sugerido. Por eso el servicio de IA tiene **su propia
-interfaz** y no comparte ninguna con `AiTextClient`. Todo lo que hoy usa `complete()`
-(`AiFacade.assessWithAi` para las pujas y `AiStrategy`) sigue igual, con `DisabledAiClient` y las
-reglas fijas. Las pujas no van en esta entrega.
+interfaz** y no comparte ninguna con `AiTextClient`. Lo que hoy usa `complete()`
+(`AiFacade.assessWithAi` para las pujas y `AiStrategy`) sigue igual. Las pujas no van en esta
+entrega.
 
-> En los fragmentos de código, los nombres que no están en esta tabla (DTO, entidades,
-> `RecommendationStrategy`, `fixedRulesStrategy`…) son de ejemplo: cámbialos por los que ya tiene
-> el backend.
+> **Nombres de los DTO:** todos los DTO del servicio de IA llevan el prefijo `Ai`
+> (`AiRecommendationResponse`, `AiPriceSuggestion`…) para no chocar con los del backend; en
+> particular, `RecommendationResult` ya es el record de salas del backend.
+>
+> Los nombres que no están en la tabla de arriba (`ArtworkRepository`, `toProfile`,
+> `comparablesFor`, campos de `Visitor` y `Artwork`…) son de ejemplo: cámbialos por los reales.
 
 ### La interfaz (Adapter, interfaz objetivo)
 
@@ -235,11 +242,11 @@ public interface AiServiceGateway {
     /** false cuando no hay AI_SERVICE_URL: el backend usa sus reglas fijas. */
     boolean isAvailable();
 
-    PriceSuggestion suggestPrice(PricingAiRequest request);
+    AiPriceSuggestion suggestPrice(AiPricingRequest request);
 
-    RecommendationResult recommend(RecommendationAiRequest request);
+    AiRecommendationResponse recommend(AiRecommendationRequest request);
 
-    DesignResult generateDesigns(DesignAiRequest request);
+    AiDesignResponse generateDesigns(AiDesignRequest request);
 }
 ```
 
@@ -269,18 +276,18 @@ public class AiServiceClient implements AiServiceGateway {
     }
 
     @Override
-    public PriceSuggestion suggestPrice(PricingAiRequest request) {
-        return post(quick, "/v1/pricing/suggest", request, PriceSuggestion.class);
+    public AiPriceSuggestion suggestPrice(AiPricingRequest request) {
+        return post(quick, "/v1/pricing/suggest", request, AiPriceSuggestion.class);
     }
 
     @Override
-    public RecommendationResult recommend(RecommendationAiRequest request) {
-        return post(quick, "/v1/recommendations", request, RecommendationResult.class);
+    public AiRecommendationResponse recommend(AiRecommendationRequest request) {
+        return post(quick, "/v1/recommendations", request, AiRecommendationResponse.class);
     }
 
     @Override
-    public DesignResult generateDesigns(DesignAiRequest request) {
-        return post(designs, "/v1/designs", request, DesignResult.class);
+    public AiDesignResponse generateDesigns(AiDesignRequest request) {
+        return post(designs, "/v1/designs", request, AiDesignResponse.class);
     }
 
     private static <T> T post(RestClient client, String uri, Object body, Class<T> type) {
@@ -314,17 +321,17 @@ public class DisabledAiServiceGateway implements AiServiceGateway {
     }
 
     @Override
-    public PriceSuggestion suggestPrice(PricingAiRequest request) {
+    public AiPriceSuggestion suggestPrice(AiPricingRequest request) {
         throw disabled();
     }
 
     @Override
-    public RecommendationResult recommend(RecommendationAiRequest request) {
+    public AiRecommendationResponse recommend(AiRecommendationRequest request) {
         throw disabled();
     }
 
     @Override
-    public DesignResult generateDesigns(DesignAiRequest request) {
+    public AiDesignResponse generateDesigns(AiDesignRequest request) {
         throw disabled();
     }
 
@@ -373,10 +380,12 @@ public class AiServiceConfig {
 `AiServiceGateway` y `AiTextClient` son tipos distintos, así que no hay ambigüedad entre beans y
 `DisabledAiClient` no cambia.
 
-### Precio: `AiFacade.suggestBasePrice`
+### Precio: `AiFacade.suggestBasePrice(Artwork)` e `isAiEnabled()`
 
-`AiFacade` recibe además el `AiServiceGateway`. Si está disponible y responde, usa su
-sugerencia; si no (deshabilitado, `not_enough_data`, error o timeout), **sigue como hoy**.
+`suggestBasePrice` sigue devolviendo `Optional<BigDecimal>`. Primero intenta con el gateway; si
+no está disponible o falla (`not_enough_data`, error o timeout), usa **el método actual con
+`aiClient.complete`**, que se queda como respaldo (aquí renombrado a
+`suggestBasePriceWithTextClient`).
 
 ```java
 package com.barnizgallery.backend.patterns.facade;
@@ -384,49 +393,91 @@ package com.barnizgallery.backend.patterns.facade;
 @Service
 public class AiFacade {
 
-    private final AiTextClient aiTextClient;     // como hoy (pujas: assessWithAi)
-    private final AiServiceGateway aiService;    // nuevo
+    private static final Logger log = LoggerFactory.getLogger(AiFacade.class);
 
-    public AiFacade(AiTextClient aiTextClient, AiServiceGateway aiService) {
-        this.aiTextClient = aiTextClient;
+    private final AiTextClient aiClient;          // como hoy (assessWithAi y el respaldo de precio)
+    private final AiServiceGateway aiService;     // nuevo
+
+    public AiFacade(AiTextClient aiClient, AiServiceGateway aiService) {
+        this.aiClient = aiClient;
         this.aiService = aiService;
     }
 
-    public PriceSuggestionDto suggestBasePrice(Artwork piece, List<Artwork> comparables) {
+    /** La IA está activa si cualquiera de los dos clientes lo está. */
+    public boolean isAiEnabled() {
+        return aiClient.isEnabled() || aiService.isAvailable();
+    }
+
+    public Optional<BigDecimal> suggestBasePrice(Artwork artwork) {
         if (aiService.isAvailable()) {
             try {
-                var request = toPricingRequest(piece, comparables);
-                return PriceSuggestionDto.from(aiService.suggestPrice(request));
+                AiPriceSuggestion suggestion =
+                        aiService.suggestPrice(toPricingRequest(artwork, comparablesFor(artwork)));
+                return Optional.of(BigDecimal.valueOf(suggestion.suggestedPrice()));
             } catch (AiServiceException | ResourceAccessException e) {
                 log.info("Precio sin servicio de IA: {}", e.getMessage());
             }
         }
-        return currentSuggestBasePrice(piece, comparables);   // el código que el método tiene hoy
+        return aiClient.isEnabled() ? suggestBasePriceWithTextClient(artwork) : Optional.empty();
+    }
+
+    /** El método actual, sin cambios: usa aiClient.complete(...). */
+    private Optional<BigDecimal> suggestBasePriceWithTextClient(Artwork artwork) {
+        // ... código de hoy ...
     }
 }
 ```
 
-### Recomendaciones: estrategia `"ai-service"`
+> **Importante — `isAiEnabled()`:** `PricingService.suggestedPrice` lanza
+> `FeatureDisabledException` si `!aiFacade.isAiEnabled()`, y hoy `isAiEnabled()` solo mira el
+> `AiTextClient`. Si no se cambia como arriba (`aiClient.isEnabled() || aiService.isAvailable()`),
+> con el servicio de IA configurado pero `DisabledAiClient` activo, **el precio sugerido nunca
+> llegaría a usar la IA**: `PricingService` cortaría antes con `FeatureDisabledException`.
+>
+> Revisa también los demás usos de `isAiEnabled()`: si alguno depende solo de `complete()` (por
+> ejemplo, las pujas con `assessWithAi`), que pregunte por `aiClient.isEnabled()` y no por
+> `isAiEnabled()`.
 
-Una estrategia nueva, registrada en `RecommendationStrategyResolver` con el nombre
-`"ai-service"`. Implementa la misma interfaz que `AiStrategy` (aquí `RecommendationStrategy`),
-pero usa el gateway. **`AiStrategy` no se toca.** Si el gateway no está disponible o falla,
-delega en la estrategia de reglas fijas que ya tiene el backend.
+`toPricingRequest` arma el JSON de la sección 2 (`piece` con los códigos de forma, estilo,
+colores y figuras, medidas y horas; `comparables` con obras parecidas que tengan precio, y si se
+vendieron; y la moneda). El servicio necesita **al menos 3 comparables en la misma moneda**; si
+no, responde `not_enough_data` y se usa el respaldo.
+
+### Recomendaciones: estrategia `"ai-service"` por salas
+
+El backend recomienda **salas**, pero el servicio de IA puntúa **obras**. La nueva estrategia
+pide la puntuación de las obras disponibles y la agrega por sala:
+
+1. Envía al servicio las obras disponibles como `candidates` (con el código de su forma, estilo,
+   colores y figuras) y el perfil e interacciones del `Visitor`. Pide `limit: 100` (el máximo),
+   porque se necesitan puntuaciones de todas las obras posibles para sumar por sala.
+2. Por cada sala, **suma** el `score` de sus obras pasado de 0..1 a 0..100. Si la sala con más
+   puntos pasa de 100, reescala todas para que esa quede en 100: así se respeta el rango 0..100
+   de `RecommendationResult` sin perder el orden.
+3. Arma el `reason` con los motivos (`reasons`) más repetidos en las obras de la sala.
+4. Si el gateway no está disponible, falla o no hay obras, delega en `HybridStrategy`.
+
+Se registra sola en `RecommendationStrategyResolver` porque devuelve `name() = "ai-service"`.
+`AiStrategy` no se toca.
 
 ```java
-@Component
-public class AiServiceRecommendationStrategy implements RecommendationStrategy {
+package com.barnizgallery.backend.patterns.strategy;
 
-    private static final Logger log = LoggerFactory.getLogger(AiServiceRecommendationStrategy.class);
+@Component
+public class AiServiceStrategy implements RecommendationStrategy {
+
+    private static final Logger log = LoggerFactory.getLogger(AiServiceStrategy.class);
+    private static final int MAX_CANDIDATES = 100;
 
     private final AiServiceGateway aiService;
-    private final RecommendationStrategy fallback;   // la estrategia de reglas fijas actual
+    private final HybridStrategy fallback;
+    private final ArtworkRepository artworks;   // ejemplo: de donde salen las obras disponibles
 
-    public AiServiceRecommendationStrategy(
-            AiServiceGateway aiService,
-            @Qualifier("fixedRulesStrategy") RecommendationStrategy fallback) {
+    public AiServiceStrategy(
+            AiServiceGateway aiService, HybridStrategy fallback, ArtworkRepository artworks) {
         this.aiService = aiService;
         this.fallback = fallback;
+        this.artworks = artworks;
     }
 
     @Override
@@ -435,21 +486,86 @@ public class AiServiceRecommendationStrategy implements RecommendationStrategy {
     }
 
     @Override
-    public List<Long> recommend(Customer customer, List<Artwork> available) {
+    public List<RecommendationResult> recommend(Visitor visitor) {
         if (!aiService.isAvailable()) {
-            return fallback.recommend(customer, available);
+            return fallback.recommend(visitor);
+        }
+        List<Artwork> available = artworks.findAvailable();
+        if (available.isEmpty()) {
+            return fallback.recommend(visitor);
         }
         try {
-            return aiService.recommend(toRequest(customer, available)).items().stream()
-                    .map(RecommendationItem::artworkId)
-                    .toList();
+            var request = new AiRecommendationRequest(
+                    toProfile(visitor), toInteractions(visitor),
+                    available.stream().map(AiServiceStrategy::toCandidate).toList(),
+                    MAX_CANDIDATES);
+            return byRoom(aiService.recommend(request).items(), available);
         } catch (AiServiceException | ResourceAccessException e) {
             log.warn("Recomendaciones sin servicio de IA: {}", e.getMessage());
-            return fallback.recommend(customer, available);
+            return fallback.recommend(visitor);
         }
+    }
+
+    /** Suma por sala los scores de sus obras (0..1 → 0..100) y arma el motivo. */
+    private static List<RecommendationResult> byRoom(
+            List<AiRecommendationItem> items, List<Artwork> available) {
+        Map<Long, Integer> roomOfArtwork = available.stream()
+                .collect(Collectors.toMap(Artwork::getId, Artwork::getRoomId));
+        Map<Integer, Double> points = new HashMap<>();
+        Map<Integer, List<AiRecommendationReasons>> reasons = new HashMap<>();
+        for (AiRecommendationItem item : items) {
+            Integer roomId = roomOfArtwork.get(item.artworkId());
+            if (roomId == null || item.score() <= 0) {
+                continue;
+            }
+            points.merge(roomId, item.score() * 100, Double::sum);
+            reasons.computeIfAbsent(roomId, id -> new ArrayList<>()).add(item.reasons());
+        }
+        double top = points.values().stream().mapToDouble(Double::doubleValue).max().orElse(0);
+        double scale = top > 100 ? 100 / top : 1;
+
+        return points.entrySet().stream()
+                .sorted(Map.Entry.<Integer, Double>comparingByValue().reversed()
+                        .thenComparing(Map.Entry.comparingByKey()))
+                .map(e -> RecommendationResult.of(
+                        e.getKey(), e.getValue() * scale, reasonText(reasons.get(e.getKey()))))
+                .toList();
+    }
+
+    /** Ejemplo: "Colores: rojo, amarillo. Figuras: colibri. Formas y estilos que te gustan." */
+    private static String reasonText(List<AiRecommendationReasons> reasons) {
+        var parts = new ArrayList<String>();
+        var colors = mostFrequent(reasons.stream().flatMap(r -> r.colors().stream()), 3);
+        var motifs = mostFrequent(reasons.stream().flatMap(r -> r.motifs().stream()), 3);
+        if (!colors.isEmpty()) parts.add("Colores: " + String.join(", ", colors) + ".");
+        if (!motifs.isEmpty()) parts.add("Figuras: " + String.join(", ", motifs) + ".");
+        if (reasons.stream().anyMatch(r -> r.shape() || r.style())) {
+            parts.add("Formas y estilos que te gustan.");
+        }
+        if (reasons.stream().anyMatch(r -> Boolean.TRUE.equals(r.budget()))) {
+            parts.add("Obras dentro de tu presupuesto.");
+        }
+        return parts.isEmpty() ? "Obras populares en la galería." : String.join(" ", parts);
+    }
+
+    private static List<String> mostFrequent(Stream<String> codes, int max) {
+        return codes.collect(Collectors.groupingBy(c -> c, LinkedHashMap::new, Collectors.counting()))
+                .entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(max)
+                .map(Map.Entry::getKey)
+                .toList();
     }
 }
 ```
+
+Notas:
+
+- Los códigos (`colors`, `motifs`) llegan normalizados (`colibri`, sin tilde). Si quieres
+  mostrarlos con tildes, tradúcelos con los nombres de los tags o catálogos del backend.
+- Con `strategy: "popular"` (visitante sin gustos ni interacciones) las obras traen `reasons`
+  vacíos: el motivo queda en "Obras populares en la galería.".
+- Si hay más de 100 obras disponibles, solo cuentan las 100 mejor puntuadas.
 
 ### Diseños
 
@@ -459,19 +575,37 @@ sigue sin propuesta de IA.
 
 ### DTO
 
+Todos con `@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)`, siguiendo los JSON
+de la sección 2:
+
 ```java
-@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public record AiError(String code, String message) {}
 
-@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-public record DesignResult(String provider, String model, String prompt, List<DesignImage> images) {}
+// Diseños
+public record AiDesignRequest(Integer requestId, String title, String description, String shape,
+        String style, List<AiDesignColor> colors, List<String> motifs, String sizeNotes,
+        String language, Integer count) {}
+public record AiDesignColor(String name, String hex) {}
+public record AiDesignResponse(String provider, String model, String prompt,
+        List<AiDesignImage> images) {}
+public record AiDesignImage(String imageBase64, String mimeType) {}
 
-@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-public record DesignImage(String imageBase64, String mimeType) {}
+// Recomendaciones
+public record AiRecommendationRequest(AiTasteProfile profile, List<AiInteraction> interactions,
+        List<AiCandidate> candidates, Integer limit) {}
+public record AiRecommendationResponse(String strategy, List<AiRecommendationItem> items) {}
+public record AiRecommendationItem(Long artworkId, Long storeId, double score,
+        AiRecommendationReasons reasons) {}
+public record AiRecommendationReasons(List<String> colors, boolean shape, boolean style,
+        List<String> motifs, Boolean budget) {}
+
+// Precio
+public record AiPriceSuggestion(double suggestedPrice, double minPrice, double maxPrice,
+        String currency, String method, String explanation) {}
 ```
 
-Los demás DTO (`DesignAiRequest`, `RecommendationAiRequest`, `RecommendationResult`,
-`PricingAiRequest`, `PriceSuggestion`) siguen los JSON de la sección 2, también con `snake_case`.
+`AiTasteProfile`, `AiInteraction`, `AiCandidate` y `AiPricingRequest` siguen igual los campos de
+la sección 2. `budget` en `AiRecommendationReasons` es `Boolean` porque puede llegar `null`.
 
 `AiServiceException` es una excepción propia (`RuntimeException`) con `status`, `code` y
 `message`. Los timeouts y errores de red llegan como `ResourceAccessException`.
@@ -484,8 +618,8 @@ La regla: **un fallo de la IA nunca rompe el flujo del usuario.**
 |---|---|
 | Diseños | Marca el diseño con estado **`FAILED`** en `custom_designs` (guarda el `code` y el `message`). El encargo sigue su curso normal sin propuesta de IA; el artesano puede trabajar solo con la descripción, y se puede ofrecer "reintentar". |
 | Diseños con `content_rejected` | También `FAILED`, pero muestra el `message` al cliente para que cambie la descripción. No reintentar automáticamente. |
-| Recomendaciones | La estrategia `"ai-service"` delega en la estrategia de reglas fijas actual. |
-| Precio sugerido | `AiFacade.suggestBasePrice` sigue como hoy. Con `not_enough_data` también puedes explicar que aún no hay suficientes piezas parecidas. |
+| Recomendaciones | La estrategia `"ai-service"` delega en `HybridStrategy`. |
+| Precio sugerido | `AiFacade.suggestBasePrice` usa el método actual con `aiClient.complete` y, si tampoco hay, devuelve `Optional.empty()`. |
 
 Recomendaciones:
 
