@@ -38,6 +38,8 @@ Todos los cambios son compatibles con la versión 1.0.0: solo se agregan campos 
 - **Precio sugerido:**
   - Se descartan los precios atípicos de los comparables (IQR).
   - Campo `confidence` (`low`, `medium`, `high`).
+- **Prueba del despliegue:** `scripts/smoke_test.py` revisa `/health`, la autenticación, las
+  recomendaciones y el precio en Render, sin generar imágenes.
 - **Documentación:** ejemplos y descripciones en `/docs`, diagrama de arquitectura (Mermaid) y
   tabla de patrones en el README, y `DOCS_ENABLED` para ocultar la documentación en producción.
 

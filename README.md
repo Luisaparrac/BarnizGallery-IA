@@ -207,6 +207,19 @@ Con menos de 3 comparables, haya o no modelo de texto, responde `422 not_enough_
 4. Render inyecta la variable `PORT`; el `Dockerfile` ya la usa.
 5. En el backend configura `AI_SERVICE_URL` (la URL de Render) y la misma `AI_SERVICE_KEY`.
 
+### Probar el despliegue (smoke test)
+
+```bash
+# Linux/macOS
+AI_SERVICE_KEY=<clave> python scripts/smoke_test.py
+# Windows PowerShell
+$env:AI_SERVICE_KEY="<clave>"; python scripts/smoke_test.py
+```
+
+Revisa `/health`, que `/v1` rechace las llamadas sin clave, las recomendaciones y el precio
+sugerido contra Render (o contra `AI_SERVICE_URL`). **No genera imágenes**, así que no gasta.
+La clave se lee del entorno y nunca se imprime; el código de salida es 0 si todo pasa.
+
 > **Ojo con el plan gratis:** Render "duerme" el servicio tras unos 15 minutos sin uso y la
 > primera llamada después puede tardar cerca de un minuto en responder mientras arranca. El
 > backend debe tener timeouts generosos (120 s para diseños) y seguir funcionando con sus reglas
