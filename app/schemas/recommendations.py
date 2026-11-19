@@ -80,6 +80,8 @@ class RecommendationItem(BaseModel):
     store_id: int | None
     score: float
     reasons: Reasons
+    #: Short Spanish sentence for the customer ("Coincide con lo que te gusta: ...").
+    explanation: str = ""
 
 
 class RecommendationResponse(BaseModel):

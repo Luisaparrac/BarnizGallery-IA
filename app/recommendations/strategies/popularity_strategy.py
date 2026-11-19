@@ -7,6 +7,7 @@ still applying the budget adjustment if the profile only has a budget.
 import numpy as np
 
 from app.recommendations.budget import budget_fit
+from app.recommendations.explanation import explain
 from app.recommendations.feature_vectorizer import FeatureVectorizer
 from app.recommendations.strategies.recommendation_strategy import RecommendationStrategy
 from app.schemas.recommendations import Reasons, RecommendationItem, RecommendationRequest
@@ -36,6 +37,7 @@ class PopularityStrategy(RecommendationStrategy):
                     store_id=candidate.store_id,
                     score=round(score, 4),
                     reasons=reasons,
+                    explanation=explain(reasons, candidate, popular=True),
                 )
             )
         popularity_by_id = {c.artwork_id: c.popularity for c in request.candidates}

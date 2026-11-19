@@ -12,6 +12,7 @@ from typing import ClassVar
 import numpy as np
 
 from app.recommendations.budget import budget_fit
+from app.recommendations.explanation import explain
 from app.recommendations.feature_vectorizer import FeatureVectorizer
 from app.recommendations.recommendation_weights import DEFAULT_WEIGHTS, RecommendationWeights
 from app.schemas.recommendations import RecommendationItem, RecommendationRequest
@@ -53,6 +54,7 @@ class RecommendationStrategy(ABC):
                 store_id=candidate.store_id,
                 score=round(score, 4),
                 reasons=reasons,
+                explanation=explain(reasons, candidate),
             )
             scored.append((item.score, candidate.popularity, item))
 
