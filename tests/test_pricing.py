@@ -253,20 +253,12 @@ def test_without_text_model_needs_three_comparables():
     assert info.value.status_code == 422
 
 
-def test_with_text_model_one_comparable_is_a_base():
-    service, _ = service_with({"suggested_price": 999, "explanation": "x"})
-
-    response = service.suggest(make_request([comparable(100)]))
-
-    assert response.method == "comparables+llm"
-    assert response.suggested_price == 100
-
-
-def test_without_any_comparable_never_invents_a_price():
-    service, model = service_with({"suggested_price": 50, "explanation": "x"})
+@pytest.mark.parametrize("count", [0, 1, 2])
+def test_with_text_model_still_needs_three_comparables(count):
+    service, model = service_with({"suggested_price": 100, "explanation": "x"})
 
     with pytest.raises(ServiceError) as info:
-        service.suggest(make_request([]))
+        service.suggest(make_request(SIX[:count]))
 
     assert info.value.code == ErrorCode.NOT_ENOUGH_DATA
     assert model.calls == []
@@ -280,15 +272,6 @@ def test_text_model_failure_falls_back_to_comparables():
 
     assert response.method == "comparables"
     assert response.suggested_price == 95
-
-
-def test_text_model_failure_with_few_comparables_is_reported():
-    service, _ = service_with(ServiceError(ErrorCode.PROVIDER_ERROR, "falló"))
-
-    with pytest.raises(ServiceError) as info:
-        service.suggest(make_request(SIX[:2]))
-
-    assert info.value.code == ErrorCode.PROVIDER_ERROR
 
 
 # --- Endpoint ------------------------------------------------------------------------

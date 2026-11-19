@@ -193,8 +193,9 @@ Salida:
 
 - `method`: `comparables`, o `comparables+llm` si el servicio tiene modelo de texto activado. El
   modelo de texto solo puede mover el precio **dentro** del rango.
-- Sin modelo de texto y con menos de 3 comparables: `422 not_enough_data`. Sin ningún
-  comparable siempre es `422`: **el servicio nunca inventa un precio.**
+- Con menos de 3 comparables en la moneda pedida, haya o no modelo de texto:
+  `422 not_enough_data`. **El servicio nunca inventa un precio.**
+- Si el modelo de texto falla, responde igual con `method: "comparables"`.
 - Es una **sugerencia** para el artesano: muéstrala como tal y deja que él decida.
 
 ## 3. `AiServiceClient` en Spring (Adapter)

@@ -3,10 +3,10 @@
 Pattern: **Facade**. The route only calls ``suggest``; the service hides the
 ``ComparablePriceEstimator``, the optional ``LlmPriceAdvisor`` and the fallback rules:
 
-- Without a text model, at least 3 comparables are required (else 422 ``not_enough_data``).
-- With a text model, 1 comparable is enough to give it a base; it adjusts inside the range.
-- If the text model fails and there are at least 3 comparables, the comparables result is
-  returned (``method: "comparables"``) instead of an error.
+- At least 3 comparables are always required, with or without a text model
+  (else 422 ``not_enough_data``); the text model only adjusts inside their range.
+- If the text model fails, the comparables result is returned (``method: "comparables"``)
+  instead of an error.
 
 The price is always a suggestion for the artisan, who makes the final decision.
 """
@@ -14,17 +14,11 @@ The price is always a suggestion for the artisan, who makes the final decision.
 import logging
 
 from app.core.errors import ServiceError
-from app.pricing.comparable_price_estimator import (
-    DEFAULT_MIN_COMPARABLES,
-    ComparablePriceEstimator,
-    PriceEstimate,
-)
+from app.pricing.comparable_price_estimator import ComparablePriceEstimator, PriceEstimate
 from app.pricing.llm_price_advisor import LlmPriceAdvisor
 from app.schemas.pricing import PricingRequest, PricingResponse
 
 logger = logging.getLogger(__name__)
-
-MIN_COMPARABLES_WITH_LLM = 1
 
 
 def _money(value: float) -> str:
@@ -36,8 +30,7 @@ class PricingService:
         self._advisor = advisor
 
     def suggest(self, request: PricingRequest) -> PricingResponse:
-        minimum = MIN_COMPARABLES_WITH_LLM if self._advisor.enabled else DEFAULT_MIN_COMPARABLES
-        estimate = ComparablePriceEstimator(minimum).estimate(
+        estimate = ComparablePriceEstimator().estimate(
             request.piece, request.comparables, request.currency
         )
 
@@ -45,8 +38,6 @@ class PricingService:
             try:
                 advice = self._advisor.advise(request.piece, request.comparables, estimate)
             except ServiceError as exc:
-                if estimate.comparables_used < DEFAULT_MIN_COMPARABLES:
-                    raise
                 logger.warning("Price advisor failed (%s); using comparables only", exc.code)
             else:
                 return self._response(

@@ -102,8 +102,8 @@ podrá agregar otra estrategia sin tocar las rutas.
 
 El precio es una **sugerencia** para el artesano; él decide. Se calcula con la mediana
 ponderada por parecido de piezas comparables y un rango intercuartílico. Si hay modelo de texto,
-este puede ajustar dentro del rango y redactar la explicación. Con menos de 3 comparables y sin
-modelo de texto, el servicio responde `422 not_enough_data`: **nunca inventa un precio**.
+este puede ajustar dentro del rango y redactar la explicación. Con menos de 3 comparables, haya o
+no modelo de texto, el servicio responde `422 not_enough_data`: **nunca inventa un precio**.
 
 ## Despliegue en Render (Docker)
 
