@@ -17,7 +17,7 @@ Frontend 3D ──► Backend Spring ──► Servicio de IA (FastAPI) ──�
 
 | Variable | Ejemplo | Uso |
 |---|---|---|
-| `AI_SERVICE_URL` | `https://museo-ia.onrender.com` | URL base del servicio, sin `/` final |
+| `AI_SERVICE_URL` | `https://barnizgallery-ia.onrender.com` | URL base del servicio, sin `/` final |
 | `AI_SERVICE_KEY` | (secreta) | La misma `AI_SERVICE_KEY` configurada en el servicio de IA |
 
 Nunca las subas al repositorio; van en el `.env` local y en el panel de Render.
@@ -31,7 +31,7 @@ ai.service.key=${AI_SERVICE_KEY:}
 Si `AI_SERVICE_URL` está vacía, se usa `DisabledAiServiceGateway` y el backend sigue con sus
 reglas fijas (ver sección 3).
 
-## 2. Reglas generales del contrato (versión 1)
+## 2. Reglas generales del contrato (versión 1.1)
 
 - **Autenticación:** todas las rutas, menos `/health`, exigen el header
   `X-API-Key: <AI_SERVICE_KEY>`. Si falta o es incorrecta, la respuesta es `401`.
@@ -40,6 +40,11 @@ reglas fijas (ver sección 3).
 - **Códigos de texto, no ids:** recomendaciones y precio usan códigos como `"rojo"`, `"colibri"`,
   `"bandeja"`. Sirven los tags de texto actuales y luego los códigos de los catálogos de la v2.
   El servicio los normaliza (minúsculas, sin tildes, sin espacios extra): `"Colibrí"` = `"colibri"`.
+- **`X-Request-ID`:** envía uno por llamada (hasta 64 caracteres `A-Z a-z 0-9 . _ -`, por
+  ejemplo `pedido-42-intento-1`). El servicio lo devuelve y lo pone en todos sus logs; si no
+  lo envías, genera uno. Regístralo en tus logs para seguir una llamada de punta a punta.
+- **Límites:** máximo `RATE_LIMIT_PER_MINUTE` (20) llamadas por minuto por clave e IP y cuerpos
+  de hasta 1 MB. Las respuestas `429` traen `Retry-After` (segundos).
 - **Errores** con la forma `{"code": "...", "message": "..."}`. El `message` está en español y se
   puede mostrar; decide siempre por el `code`:
 
@@ -47,6 +52,9 @@ reglas fijas (ver sección 3).
 |---|---|---|---|
 | 400 | `invalid_request` | El JSON no cumple el contrato | Es un error del backend: registrarlo y corregir |
 | 400 | `content_rejected` | OpenAI rechazó el contenido del encargo | Mostrar al cliente que cambie la descripción |
+| 413 | `invalid_request` | Cuerpo de más de 1 MB | Enviar menos candidatos o comparables |
+| 429 | `rate_limited` | Más de 20 llamadas por minuto | Reglas fijas; no reintentar antes de `Retry-After` |
+| 429 | `budget_exceeded` | Se acabó el cupo diario de imágenes (30) | Diseño `FAILED`; reintentar al día siguiente |
 | 401 | `unauthorized` | Falta `X-API-Key` o no es válida | Revisar `AI_SERVICE_KEY` |
 | 422 | `not_enough_data` | Pocos datos (precio con menos de 3 comparables) | No sugerir precio |
 | 502 | `provider_error` | OpenAI falló | Usar las reglas fijas; se puede reintentar más tarde |
@@ -58,7 +66,8 @@ reglas fijas (ver sección 3).
 Sin clave. Útil para despertar el servicio en Render (ver sección 7).
 
 ```json
-{"status": "ok", "version": "1.0.0", "image_provider": "fake", "text_provider": "none"}
+{"status": "ok", "version": "1.1.0", "image_provider": "fake", "text_provider": "none",
+ "commit": "883692f..."}
 ```
 
 ### `POST /v1/designs`: diseños para encargos
@@ -99,9 +108,18 @@ Salida:
   "provider": "openai",
   "model": "gpt-image-2",
   "prompt": "<prompt final enviado>",
-  "images": [{"image_base64": "iVBORw0KGgo...", "mime_type": "image/png"}]
+  "images": [{"image_base64": "UklGRl...", "mime_type": "image/webp",
+              "composition": null, "prompt": "<prompt de esta imagen>"}]
 }
 ```
+
+- **Formato:** por defecto `image/webp` (también puede ser `image/jpeg` o `image/png`, según
+  `OPENAI_IMAGE_FORMAT`). Usa siempre `mime_type`, nunca supongas PNG.
+- **Variaciones:** con `count: 2` cada imagen trae `composition` (`top`, `three_quarter`,
+  `detail`) y su propio `prompt`. El `prompt` de arriba es el de la primera imagen.
+- **Moderación:** con OpenAI, el texto del cliente se revisa antes de generar; si se rechaza
+  responde `400 content_rejected` sin gastar.
+- **Cupo diario:** `429 budget_exceeded` cuando se acaban las imágenes del día.
 
 Con `IMAGE_PROVIDER=fake` el servicio devuelve un PNG dibujado (sin costo), con
 `"provider": "fake"`, ideal para desarrollar el flujo completo.
@@ -145,10 +163,15 @@ Salida:
   "items": [
     {"artwork_id": 5, "store_id": 2, "score": 0.9476,
      "reasons": {"colors": ["rojo", "amarillo"], "shape": true, "style": true,
-                 "motifs": ["colibri"], "budget": true}}
+                 "motifs": ["colibri"], "budget": true},
+     "explanation": "Coincide con lo que te gusta: los colores rojo y amarillo, la forma bandeja, el estilo tradicional y la figura colibri. Está dentro de tu presupuesto."}
   ]
 }
 ```
+
+- **`explanation`:** frase corta en español lista para mostrar.
+- **Diversidad:** el orden evita que un solo taller (`store_id`) llene la lista (MMR). Por eso
+  el orden no siempre coincide con `score`: `score` es la relevancia.
 
 En `reasons` aparecen tanto lo que el cliente declaró en su perfil como lo que se dedujo de sus
 interacciones (aquí `amarillo`, porque vio esa obra 40 segundos).
@@ -188,8 +211,8 @@ Salida:
 
 ```json
 {"suggested_price": 95, "min_price": 90, "max_price": 115, "currency": "USD",
- "method": "comparables",
- "explanation": "Basado en 6 piezas parecidas, 3 ya vendidas, con un parecido promedio del 100%..."}
+ "method": "comparables", "confidence": "medium",
+ "explanation": "Basado en 6 piezas parecidas, 3 ya vendidas, con un parecido promedio del 100%. Se descartaron 1 precio atípico. ..."}
 ```
 
 - `method`: `comparables`, o `comparables+llm` si el servicio tiene modelo de texto activado. El
@@ -197,6 +220,14 @@ Salida:
 - Con menos de 3 comparables en la moneda pedida, haya o no modelo de texto:
   `422 not_enough_data`. **El servicio nunca inventa un precio.**
 - Si el modelo de texto falla, responde igual con `method: "comparables"`.
+- **Precios atípicos:** se descartan con la regla IQR (por ejemplo, 9500 entre precios de 100).
+- **`confidence`:** `high` (8+ comparables con 70 %+ de parecido), `medium` (5+ y 50 %+) o
+  `low`. Con `low`, muéstralo como una referencia débil.
+
+### `GET /v1/metrics`
+
+Con `X-API-Key`. Contadores por ruta, latencia, imágenes del día y costo estimado de OpenAI.
+Útil para revisar el gasto; se reinicia cuando Render reinicia el servicio.
 - Es una **sugerencia** para el artesano: muéstrala como tal y deja que él decida.
 
 ## 3. Cliente del servicio de IA en Spring (Adapter)
@@ -588,20 +619,21 @@ public record AiDesignRequest(Integer requestId, String title, String descriptio
 public record AiDesignColor(String name, String hex) {}
 public record AiDesignResponse(String provider, String model, String prompt,
         List<AiDesignImage> images) {}
-public record AiDesignImage(String imageBase64, String mimeType) {}
+public record AiDesignImage(String imageBase64, String mimeType, String composition,
+        String prompt) {}
 
 // Recomendaciones
 public record AiRecommendationRequest(AiTasteProfile profile, List<AiInteraction> interactions,
         List<AiCandidate> candidates, Integer limit) {}
 public record AiRecommendationResponse(String strategy, List<AiRecommendationItem> items) {}
 public record AiRecommendationItem(Long artworkId, Long storeId, double score,
-        AiRecommendationReasons reasons) {}
+        AiRecommendationReasons reasons, String explanation) {}
 public record AiRecommendationReasons(List<String> colors, boolean shape, boolean style,
         List<String> motifs, Boolean budget) {}
 
 // Precio
 public record AiPriceSuggestion(double suggestedPrice, double minPrice, double maxPrice,
-        String currency, String method, String explanation) {}
+        String currency, String method, String explanation, String confidence) {}
 ```
 
 `AiTasteProfile`, `AiInteraction`, `AiCandidate` y `AiPricingRequest` siguen igual los campos de
@@ -618,6 +650,8 @@ La regla: **un fallo de la IA nunca rompe el flujo del usuario.**
 |---|---|
 | Diseños | Marca el diseño con estado **`FAILED`** en `custom_designs` (guarda el `code` y el `message`). El encargo sigue su curso normal sin propuesta de IA; el artesano puede trabajar solo con la descripción, y se puede ofrecer "reintentar". |
 | Diseños con `content_rejected` | También `FAILED`, pero muestra el `message` al cliente para que cambie la descripción. No reintentar automáticamente. |
+| Diseños con `budget_exceeded` (429) | `FAILED` con el mensaje; reintentar al día siguiente. |
+| Cualquier `rate_limited` (429) | Reglas fijas; no reintentar antes de `Retry-After`. |
 | Recomendaciones | La estrategia `"ai-service"` delega en `HybridStrategy`. |
 | Precio sugerido | `AiFacade.suggestBasePrice` usa el método actual con `aiClient.complete` y, si tampoco hay, devuelve `Optional.empty()`. |
 
@@ -632,12 +666,14 @@ Recomendaciones:
 
 El servicio de IA **no guarda nada**: devuelve cada imagen en `images[i].image_base64`.
 
-1. Decodifica: `byte[] png = Base64.getDecoder().decode(image.imageBase64());`
+1. Decodifica: `byte[] bytes = Base64.getDecoder().decode(image.imageBase64());`
 2. Súbela al mismo almacenamiento que ya usan las fotos de las obras (por ejemplo, Cloudinary,
-   S3 o Supabase Storage), con un nombre como `designs/{requestId}/{uuid}.png` y `image/png`.
+   S3 o Supabase Storage) con la extensión y el `Content-Type` de `mime_type`: `image/webp` →
+   `designs/{requestId}/{uuid}.webp`, `image/jpeg` → `.jpg`, `image/png` → `.png`.
 3. Guarda en `custom_designs` la **URL** resultante, junto con `provider`, `model` y `prompt`
    (sirve para auditar y para la sustentación).
-4. **No guardes el base64 en PostgreSQL**: una imagen de 1024×1024 pesa más de 1 MB en base64.
+4. **No guardes el base64 en PostgreSQL**: aunque en webp pesa mucho menos que en PNG, sigue
+   siendo un archivo; guarda solo la URL.
 
 ## 6. Pruebas sin costo
 
@@ -645,7 +681,9 @@ El servicio de IA **no guarda nada**: devuelve cada imagen en `images[i].image_b
   OpenAI: las imágenes son dibujos simples y el precio sale solo de comparables.
 - Para pruebas del backend, simula el servicio con `MockRestServiceServer` o WireMock usando los
   JSON de este documento.
-- Documentación interactiva del servicio: `<AI_SERVICE_URL>/docs`.
+- Documentación interactiva con ejemplos: `<AI_SERVICE_URL>/docs` (en producción puede estar
+  oculta con `DOCS_ENABLED=false`).
+- Para revisar el despliegue sin gastar: `AI_SERVICE_KEY=... python scripts/smoke_test.py`.
 
 ## 7. Render: el servicio "duerme"
 
