@@ -123,7 +123,7 @@ def test_factory_creates_openai_provider_with_settings():
     provider = ImageProviderFactory.create(settings)
 
     assert isinstance(provider, OpenAIImageProvider)
-    assert provider.model == "gpt-image-1-mini"
+    assert provider.model == "gpt-image-2"
 
 
 def test_endpoint_maps_rejection_to_400(app, client, auth_headers):

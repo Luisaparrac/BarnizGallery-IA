@@ -56,7 +56,7 @@ nada**: las imágenes las dibuja Pillow y el precio sale solo de los comparables
 | `AI_SERVICE_KEY` | Clave que debe enviar el backend | (obligatoria) |
 | `IMAGE_PROVIDER` | `fake` u `openai` | `fake` |
 | `OPENAI_API_KEY` | Clave de OpenAI | vacía |
-| `OPENAI_IMAGE_MODEL` | Modelo de imágenes | `gpt-image-1-mini` |
+| `OPENAI_IMAGE_MODEL` | Modelo de imágenes | `gpt-image-2` |
 | `OPENAI_IMAGE_QUALITY` | `low`, `medium` o `high` | `medium` |
 | `OPENAI_IMAGE_SIZE` | Tamaño de la imagen | `1024x1024` |
 | `TEXT_PROVIDER` | `none` u `openai` (precio sugerido) | `none` |

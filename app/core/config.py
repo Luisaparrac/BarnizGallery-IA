@@ -22,7 +22,7 @@ class Settings(BaseSettings):
 
     image_provider: Literal["fake", "openai"] = "fake"
     openai_api_key: SecretStr = SecretStr("")
-    openai_image_model: str = "gpt-image-1-mini"
+    openai_image_model: str = "gpt-image-2"
     openai_image_quality: Literal["low", "medium", "high"] = "medium"
     openai_image_size: str = "1024x1024"
 

@@ -13,7 +13,7 @@ def test_defaults_use_free_providers():
 
     assert settings.image_provider == "fake"
     assert settings.text_provider == "none"
-    assert settings.openai_image_model == "gpt-image-1-mini"
+    assert settings.openai_image_model == "gpt-image-2"
     assert settings.max_images_per_request == 2
 
 
