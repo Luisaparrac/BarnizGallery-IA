@@ -1,8 +1,8 @@
 # Integración del backend con el servicio de IA
 
 Guía para la encargada de **BarnizGallery-Backend** (Spring). Explica el contrato del servicio de
-IA, cómo crear `AiServiceClient` para reemplazar `DisabledAiClient` y qué hacer cuando la IA
-falla.
+IA, cómo conectarlo con `AiServiceGateway` / `AiServiceClient` sin tocar `AiTextClient` ni
+`DisabledAiClient`, y qué hacer cuando la IA falla.
 
 ```
 Frontend 3D ──► Backend Spring ──► Servicio de IA (FastAPI) ──► OpenAI
@@ -28,7 +28,8 @@ ai.service.url=${AI_SERVICE_URL:}
 ai.service.key=${AI_SERVICE_KEY:}
 ```
 
-Si `AI_SERVICE_URL` está vacía, el backend sigue usando `DisabledAiClient` (ver sección 3).
+Si `AI_SERVICE_URL` está vacía, se usa `DisabledAiServiceGateway` y el backend sigue con sus
+reglas fijas (ver sección 3).
 
 ## 2. Reglas generales del contrato (versión 1)
 
@@ -198,84 +199,59 @@ Salida:
 - Si el modelo de texto falla, responde igual con `method: "comparables"`.
 - Es una **sugerencia** para el artesano: muéstrala como tal y deja que él decida.
 
-## 3. `AiServiceClient` en Spring (Adapter)
+## 3. Cliente del servicio de IA en Spring (Adapter)
 
-Piezas que ya existen en el backend:
+### Qué se queda igual y qué es nuevo
 
-| Pieza | Paquete | Papel |
+| Pieza | Paquete | Estado |
 |---|---|---|
-| `AiTextClient` | `com.barnizgallery.backend.patterns.adapter` | Interfaz: `String complete(String systemPrompt, String userPrompt)` y `boolean isEnabled()` |
-| `DisabledAiClient` | `com.barnizgallery.backend.patterns.adapter` | Implementación vacía: `isEnabled()` es `false` |
-| `AiFacade` | `com.barnizgallery.backend.patterns.facade` | Fachada que usa el resto del backend |
+| `AiTextClient` (`complete(systemPrompt, userPrompt)`, `isEnabled()`) | `com.barnizgallery.backend.patterns.adapter` | **No se toca** |
+| `DisabledAiClient` | `com.barnizgallery.backend.patterns.adapter` | **No se toca** (sigue con su `@Component`) |
+| `AiStrategy` | (recomendaciones) | **No se toca** |
+| `AiServiceGateway` | `com.barnizgallery.backend.patterns.adapter` | **Nueva** interfaz para este servicio |
+| `AiServiceClient` | `com.barnizgallery.backend.patterns.adapter` | **Nueva**: implementa `AiServiceGateway` con `RestClient` |
+| `DisabledAiServiceGateway` | `com.barnizgallery.backend.patterns.adapter` | **Nueva**: se usa cuando no hay `AI_SERVICE_URL` |
+| `AiServiceRecommendationStrategy` (`"ai-service"`) | junto a `AiStrategy` | **Nueva** estrategia en `RecommendationStrategyResolver` |
+| `AiFacade.suggestBasePrice` | `com.barnizgallery.backend.patterns.facade` | Usa el gateway si está disponible |
 
-`AiServiceClient` va en el mismo paquete `patterns.adapter`. Es un **Adapter**: implementa
-`AiTextClient` (para reemplazar a `DisabledAiClient` como el `AiTextClient` que se inyecta) y
-traduce a HTTP las tres funciones del servicio de IA.
+`AiTextClient` es para texto libre (`complete`), y este servicio no tiene texto libre: expone
+diseños, recomendaciones y precio sugerido. Por eso el servicio de IA tiene **su propia
+interfaz** y no comparte ninguna con `AiTextClient`. Todo lo que hoy usa `complete()`
+(`AiFacade.assessWithAi` para las pujas y `AiStrategy`) sigue igual, con `DisabledAiClient` y las
+reglas fijas. Las pujas no van en esta entrega.
 
-> **Ojo con `complete(...)`:** el servicio de IA (v1) **no** tiene una ruta de texto libre; solo
-> expone diseños, recomendaciones y precio sugerido. Por eso `AiServiceClient.complete(...)` lanza
-> `UnsupportedOperationException` y `AiFacade` debe usar los métodos específicos. Si se necesita
-> texto libre, hay que acordar primero una ruta nueva en el servicio de IA.
+> En los fragmentos de código, los nombres que no están en esta tabla (DTO, entidades,
+> `RecommendationStrategy`, `fixedRulesStrategy`…) son de ejemplo: cámbialos por los que ya tiene
+> el backend.
 
-### Configuración
-
-Se usan dos `RestClient`: uno con **120 s** de lectura para diseños (generar imágenes tarda) y otro
-con **10 s** para recomendaciones y precio.
+### La interfaz (Adapter, interfaz objetivo)
 
 ```java
 package com.barnizgallery.backend.patterns.adapter;
 
-@Configuration
-public class AiClientConfig {
+/** Funciones del servicio de IA de MUSEO. */
+public interface AiServiceGateway {
 
-    /** Solo existe si hay AI_SERVICE_URL. */
-    @Bean
-    @ConditionalOnExpression("!'${ai.service.url:}'.isBlank()")
-    public AiServiceClient aiServiceClient(
-            @Value("${ai.service.url}") String url,
-            @Value("${ai.service.key:}") String key) {
-        if (key.isBlank()) {
-            throw new IllegalStateException("Falta AI_SERVICE_KEY para usar el servicio de IA");
-        }
-        return new AiServiceClient(
-                restClient(url, key, Duration.ofSeconds(120)),
-                restClient(url, key, Duration.ofSeconds(10)));
-    }
+    /** false cuando no hay AI_SERVICE_URL: el backend usa sus reglas fijas. */
+    boolean isAvailable();
 
-    /**
-     * El AiTextClient que se inyecta en el resto del backend: el servicio de IA si está
-     * configurado y, si no, DisabledAiClient. @Primary evita la ambigüedad, porque
-     * AiServiceClient también es un AiTextClient.
-     */
-    @Bean
-    @Primary
-    public AiTextClient aiTextClient(ObjectProvider<AiServiceClient> aiService) {
-        AiServiceClient service = aiService.getIfAvailable();
-        return service != null ? service : new DisabledAiClient();
-    }
+    PriceSuggestion suggestPrice(PricingAiRequest request);
 
-    private static RestClient restClient(String url, String key, Duration readTimeout) {
-        var factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(Duration.ofSeconds(10));
-        factory.setReadTimeout(readTimeout);
-        return RestClient.builder()
-                .baseUrl(url)
-                .defaultHeader("X-API-Key", key)
-                .requestFactory(factory)
-                .build();
-    }
+    RecommendationResult recommend(RecommendationAiRequest request);
+
+    DesignResult generateDesigns(DesignAiRequest request);
 }
 ```
 
-Si hoy `DisabledAiClient` está anotada con `@Component` (o se crea en otra configuración),
-quita esa anotación: con esta clase, el bean `AiTextClient` se decide en un solo lugar.
+### La implementación real: `AiServiceClient`
 
-### El adaptador
+Usa dos `RestClient`: uno con **120 s** de lectura para diseños (generar imágenes tarda) y otro
+con **10 s** para recomendaciones y precio. Todos llevan el header `X-API-Key`.
 
 ```java
 package com.barnizgallery.backend.patterns.adapter;
 
-public class AiServiceClient implements AiTextClient {
+public class AiServiceClient implements AiServiceGateway {
 
     private static final Logger log = LoggerFactory.getLogger(AiServiceClient.class);
 
@@ -288,26 +264,23 @@ public class AiServiceClient implements AiTextClient {
     }
 
     @Override
-    public boolean isEnabled() {
+    public boolean isAvailable() {
         return true;
     }
 
     @Override
-    public String complete(String systemPrompt, String userPrompt) {
-        throw new UnsupportedOperationException(
-                "El servicio de IA v1 no expone texto libre; usa designs, recommend o suggestPrice.");
+    public PriceSuggestion suggestPrice(PricingAiRequest request) {
+        return post(quick, "/v1/pricing/suggest", request, PriceSuggestion.class);
     }
 
-    public DesignResult generateDesigns(DesignAiRequest request) {
-        return post(designs, "/v1/designs", request, DesignResult.class);
-    }
-
+    @Override
     public RecommendationResult recommend(RecommendationAiRequest request) {
         return post(quick, "/v1/recommendations", request, RecommendationResult.class);
     }
 
-    public PriceSuggestion suggestPrice(PricingAiRequest request) {
-        return post(quick, "/v1/pricing/suggest", request, PriceSuggestion.class);
+    @Override
+    public DesignResult generateDesigns(DesignAiRequest request) {
+        return post(designs, "/v1/designs", request, DesignResult.class);
     }
 
     private static <T> T post(RestClient client, String uri, Object body, Class<T> type) {
@@ -327,10 +300,83 @@ public class AiServiceClient implements AiTextClient {
 }
 ```
 
-### Uso desde `AiFacade`
+### La implementación deshabilitada
 
-`AiFacade` recibe el `AiTextClient` (como hoy) y, aparte, el `AiServiceClient` si existe. Así no
-necesita `instanceof` y, cuando la IA está apagada, aplica las reglas fijas.
+```java
+package com.barnizgallery.backend.patterns.adapter;
+
+/** Se usa cuando no hay AI_SERVICE_URL. Quien la llame debe revisar isAvailable() antes. */
+public class DisabledAiServiceGateway implements AiServiceGateway {
+
+    @Override
+    public boolean isAvailable() {
+        return false;
+    }
+
+    @Override
+    public PriceSuggestion suggestPrice(PricingAiRequest request) {
+        throw disabled();
+    }
+
+    @Override
+    public RecommendationResult recommend(RecommendationAiRequest request) {
+        throw disabled();
+    }
+
+    @Override
+    public DesignResult generateDesigns(DesignAiRequest request) {
+        throw disabled();
+    }
+
+    private static AiServiceException disabled() {
+        return new AiServiceException(503, "feature_disabled", "El servicio de IA no está configurado.");
+    }
+}
+```
+
+### Configuración: un solo bean `AiServiceGateway`
+
+```java
+package com.barnizgallery.backend.patterns.adapter;
+
+@Configuration
+public class AiServiceConfig {
+
+    @Bean
+    public AiServiceGateway aiServiceGateway(
+            @Value("${ai.service.url:}") String url,
+            @Value("${ai.service.key:}") String key) {
+        if (url.isBlank()) {
+            return new DisabledAiServiceGateway();
+        }
+        if (key.isBlank()) {
+            throw new IllegalStateException("Falta AI_SERVICE_KEY para usar el servicio de IA");
+        }
+        return new AiServiceClient(
+                restClient(url, key, Duration.ofSeconds(120)),
+                restClient(url, key, Duration.ofSeconds(10)));
+    }
+
+    private static RestClient restClient(String url, String key, Duration readTimeout) {
+        var factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(Duration.ofSeconds(10));
+        factory.setReadTimeout(readTimeout);
+        return RestClient.builder()
+                .baseUrl(url)
+                .defaultHeader("X-API-Key", key)
+                .requestFactory(factory)
+                .build();
+    }
+}
+```
+
+`AiServiceGateway` y `AiTextClient` son tipos distintos, así que no hay ambigüedad entre beans y
+`DisabledAiClient` no cambia.
+
+### Precio: `AiFacade.suggestBasePrice`
+
+`AiFacade` recibe además el `AiServiceGateway`. Si está disponible y responde, usa su
+sugerencia; si no (deshabilitado, `not_enough_data`, error o timeout), **sigue como hoy**.
 
 ```java
 package com.barnizgallery.backend.patterns.facade;
@@ -338,34 +384,78 @@ package com.barnizgallery.backend.patterns.facade;
 @Service
 public class AiFacade {
 
-    private final AiTextClient aiTextClient;
-    private final AiServiceClient aiService;   // null si la IA está apagada
+    private final AiTextClient aiTextClient;     // como hoy (pujas: assessWithAi)
+    private final AiServiceGateway aiService;    // nuevo
 
-    public AiFacade(AiTextClient aiTextClient, ObjectProvider<AiServiceClient> aiService) {
+    public AiFacade(AiTextClient aiTextClient, AiServiceGateway aiService) {
         this.aiTextClient = aiTextClient;
-        this.aiService = aiService.getIfAvailable();
+        this.aiService = aiService;
     }
 
+    public PriceSuggestionDto suggestBasePrice(Artwork piece, List<Artwork> comparables) {
+        if (aiService.isAvailable()) {
+            try {
+                var request = toPricingRequest(piece, comparables);
+                return PriceSuggestionDto.from(aiService.suggestPrice(request));
+            } catch (AiServiceException | ResourceAccessException e) {
+                log.info("Precio sin servicio de IA: {}", e.getMessage());
+            }
+        }
+        return currentSuggestBasePrice(piece, comparables);   // el código que el método tiene hoy
+    }
+}
+```
+
+### Recomendaciones: estrategia `"ai-service"`
+
+Una estrategia nueva, registrada en `RecommendationStrategyResolver` con el nombre
+`"ai-service"`. Implementa la misma interfaz que `AiStrategy` (aquí `RecommendationStrategy`),
+pero usa el gateway. **`AiStrategy` no se toca.** Si el gateway no está disponible o falla,
+delega en la estrategia de reglas fijas que ya tiene el backend.
+
+```java
+@Component
+public class AiServiceRecommendationStrategy implements RecommendationStrategy {
+
+    private static final Logger log = LoggerFactory.getLogger(AiServiceRecommendationStrategy.class);
+
+    private final AiServiceGateway aiService;
+    private final RecommendationStrategy fallback;   // la estrategia de reglas fijas actual
+
+    public AiServiceRecommendationStrategy(
+            AiServiceGateway aiService,
+            @Qualifier("fixedRulesStrategy") RecommendationStrategy fallback) {
+        this.aiService = aiService;
+        this.fallback = fallback;
+    }
+
+    @Override
+    public String name() {
+        return "ai-service";
+    }
+
+    @Override
     public List<Long> recommend(Customer customer, List<Artwork> available) {
-        if (!aiTextClient.isEnabled() || aiService == null) {
-            return fixedRules.recommend(customer, available);
+        if (!aiService.isAvailable()) {
+            return fallback.recommend(customer, available);
         }
         try {
             return aiService.recommend(toRequest(customer, available)).items().stream()
                     .map(RecommendationItem::artworkId)
                     .toList();
         } catch (AiServiceException | ResourceAccessException e) {
-            log.warn("IA no disponible para recomendaciones: {}", e.getMessage());
-            return fixedRules.recommend(customer, available);
+            log.warn("Recomendaciones sin servicio de IA: {}", e.getMessage());
+            return fallback.recommend(customer, available);
         }
     }
-
-    // generateDesigns(...) y suggestPrice(...) siguen el mismo esquema (ver sección 4).
 }
 ```
 
-`fixedRules`, `Customer`, `Artwork` y `toRequest(...)` son de ejemplo: usa las reglas y
-entidades que ya tiene el backend.
+### Diseños
+
+El servicio de encargos llama a `aiService.generateDesigns(...)` solo si
+`aiService.isAvailable()`, de forma asíncrona (ver sección 4). Si no está disponible, el encargo
+sigue sin propuesta de IA.
 
 ### DTO
 
@@ -394,8 +484,8 @@ La regla: **un fallo de la IA nunca rompe el flujo del usuario.**
 |---|---|
 | Diseños | Marca el diseño con estado **`FAILED`** en `custom_designs` (guarda el `code` y el `message`). El encargo sigue su curso normal sin propuesta de IA; el artesano puede trabajar solo con la descripción, y se puede ofrecer "reintentar". |
 | Diseños con `content_rejected` | También `FAILED`, pero muestra el `message` al cliente para que cambie la descripción. No reintentar automáticamente. |
-| Recomendaciones | `AiFacade` usa las reglas actuales del backend (las mismas que con `DisabledAiClient`). |
-| Precio sugerido | No muestres sugerencia (o usa la regla actual). Con `not_enough_data` explica que aún no hay suficientes piezas parecidas. |
+| Recomendaciones | La estrategia `"ai-service"` delega en la estrategia de reglas fijas actual. |
+| Precio sugerido | `AiFacade.suggestBasePrice` sigue como hoy. Con `not_enough_data` también puedes explicar que aún no hay suficientes piezas parecidas. |
 
 Recomendaciones:
 
