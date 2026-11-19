@@ -8,6 +8,7 @@ from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import Settings, get_settings
 from app.core.errors import register_error_handlers
 from app.core.rate_limiter import SlidingWindowRateLimiter
+from app.core.request_context import RequestContextMiddleware
 from app.core.responses import Utf8JSONResponse
 from app.core.security import enforce_rate_limit, require_api_key
 from app.designs.daily_image_budget import DailyImageBudget
@@ -32,6 +33,8 @@ def create_app() -> FastAPI:
     app.add_middleware(
         BodySizeLimitMiddleware, max_bytes=lambda: current_settings(app).max_request_bytes
     )
+    # Added last, so it is the outermost: even 413 responses carry the X-Request-ID.
+    app.add_middleware(RequestContextMiddleware)
     app.include_router(health.router)
 
     protected = {
