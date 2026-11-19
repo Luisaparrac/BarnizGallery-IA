@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     openai_image_model: str = "gpt-image-2"
     openai_image_quality: Literal["low", "medium", "high"] = "medium"
     openai_image_size: str = "1024x1024"
+    moderation_enabled: bool = True
+    openai_moderation_model: str = "omni-moderation-latest"
 
     text_provider: Literal["none", "openai"] = "none"
     openai_text_model: str = ""
