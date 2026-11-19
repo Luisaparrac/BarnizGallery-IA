@@ -8,3 +8,4 @@ class HealthResponse(BaseModel):
     version: str
     image_provider: Literal["fake", "openai"]
     text_provider: Literal["none", "openai"]
+    commit: str | None = None

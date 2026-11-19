@@ -17,4 +17,5 @@ def health(settings: Annotated[Settings, Depends(get_settings)]) -> HealthRespon
         version=__version__,
         image_provider=settings.image_provider,
         text_provider=settings.text_provider,
+        commit=settings.render_git_commit,
     )

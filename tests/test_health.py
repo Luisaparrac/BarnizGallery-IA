@@ -7,7 +7,14 @@ def test_health_is_public_and_reports_providers(client):
         "version": "1.0.0",
         "image_provider": "fake",
         "text_provider": "none",
+        "commit": None,
     }
+
+
+def test_health_reports_deployed_commit(make_client):
+    client = make_client(render_git_commit="abc123")
+
+    assert client.get("/health").json()["commit"] == "abc123"
 
 
 def test_health_reports_openai_providers(make_client):

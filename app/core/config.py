@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     provider_timeout_seconds: float = Field(default=90, gt=0)
     max_images_per_request: int = Field(default=2, ge=1)
 
+    #: Set by Render at runtime; shown in /health to know which commit is deployed.
+    render_git_commit: str | None = None
+
     @model_validator(mode="after")
     def _check_provider_requirements(self) -> Self:
         uses_openai = self.image_provider == "openai" or self.text_provider == "openai"
