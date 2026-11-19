@@ -36,17 +36,19 @@ class FakeImageProvider(ImageProvider):
     def model(self) -> str:
         return "fake-pillow"
 
-    def generate(self, prompt: str, request: DesignRequest, count: int) -> list[GeneratedImage]:
+    def generate(
+        self, prompt: str, request: DesignRequest, count: int, variant: int = 0
+    ) -> list[GeneratedImage]:
         palette = [color.hex for color in request.colors] or DEFAULT_PALETTE
         shape = self._shape_kind(request.shape)
         return [
             GeneratedImage(
                 image_base64=self._encode(
-                    self._draw(shape, palette, len(request.motifs), variant)
+                    self._draw(shape, palette, len(request.motifs), position)
                 ),
                 mime_type=MIME_TYPES[self._format],
             )
-            for variant in range(count)
+            for position in range(variant, variant + count)
         ]
 
     @staticmethod
@@ -96,4 +98,9 @@ class FakeImageProvider(ImageProvider):
             x = center + offset
             diamond = [(x, center - 14), (x + 10, center), (x, center + 14), (x - 10, center)]
             draw.polygon(diamond, fill=motif_colors[index % len(motif_colors)], outline=OUTLINE)
+
+        # One dot per position in the request, so every image differs even with few colours.
+        for dot in range(variant + 1):
+            x = 24 + dot * 16
+            draw.ellipse((x, IMAGE_SIZE - 32, x + 8, IMAGE_SIZE - 24), fill=OUTLINE)
         return image

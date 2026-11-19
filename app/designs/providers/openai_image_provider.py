@@ -50,7 +50,9 @@ class OpenAIImageProvider(ImageProvider):
     def model(self) -> str:
         return self._model
 
-    def generate(self, prompt: str, request: DesignRequest, count: int) -> list[GeneratedImage]:
+    def generate(
+        self, prompt: str, request: DesignRequest, count: int, variant: int = 0
+    ) -> list[GeneratedImage]:
         options = {"output_format": self._format}
         if self._format != "png":
             options["output_compression"] = self._compression

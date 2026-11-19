@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from app.designs.compositions import COMPOSITIONS
 from app.designs.design_prompt_builder import DesignPromptBuilder
 from app.designs.image_provider_factory import ImageProviderFactory
 from app.designs.providers.fake_image_provider import FakeImageProvider
@@ -191,3 +192,45 @@ def test_endpoint_uses_configured_format(make_client, auth_headers):
 
     assert image["mime_type"] == "image/jpeg"
     assert Image.open(io.BytesIO(base64.b64decode(image["image_base64"]))).format == "JPEG"
+
+
+# --- Variations -----------------------------------------------------------------------
+
+
+def test_single_image_keeps_default_framing(design_request):
+    prompt = DesignPromptBuilder.for_request(design_request)
+
+    assert "Centered product photograph of the whole piece." in prompt
+    assert "Composition:" not in prompt
+
+
+def test_each_image_gets_its_own_composition(make_client, auth_headers):
+    client = make_client(max_images_per_request=3)
+
+    body = client.post(
+        "/v1/designs", json={**PAYLOAD, "count": 3}, headers=auth_headers
+    ).json()
+
+    images = body["images"]
+    assert [image["composition"] for image in images] == ["top", "three_quarter", "detail"]
+    assert "top-down view" in images[0]["prompt"]
+    assert "three-quarter view" in images[1]["prompt"]
+    assert "close-up detail of the decorative motifs" in images[2]["prompt"]
+    assert len({image["prompt"] for image in images}) == 3
+    assert len({image["image_base64"] for image in images}) == 3
+    assert body["prompt"] == images[0]["prompt"]
+
+
+def test_compositions_keep_the_rest_of_the_prompt(design_request):
+    for composition in COMPOSITIONS:
+        prompt = DesignPromptBuilder.for_request(design_request, composition)
+        assert "Barniz de Pasto" in prompt
+        assert "No people" in prompt
+        assert "Centered product photograph of the whole piece." not in prompt
+
+
+def test_single_image_has_no_composition(client, auth_headers):
+    image = client.post("/v1/designs", json=PAYLOAD, headers=auth_headers).json()["images"][0]
+
+    assert image["composition"] is None
+    assert "Barniz de Pasto" in image["prompt"]

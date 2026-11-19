@@ -30,10 +30,10 @@ class BillableFakeProvider(FakeImageProvider):
         super().__init__()
         self.fail = fail
 
-    def generate(self, prompt, request, count):
+    def generate(self, prompt, request, count, variant=0):
         if self.fail:
             raise ServiceError(ErrorCode.PROVIDER_ERROR, "falló")
-        return super().generate(prompt, request, count)
+        return super().generate(prompt, request, count, variant)
 
 
 def test_reserve_until_limit_then_budget_exceeded():
@@ -127,3 +127,20 @@ def test_endpoint_returns_429_budget_exceeded(app, client, auth_headers):
     assert second.status_code == 429
     assert second.json()["code"] == "budget_exceeded"
     assert "Retry-After" in second.headers
+
+
+class FailsOnSecondImage(BillableFakeProvider):
+    def generate(self, prompt, request, count, variant=0):
+        if variant == 1:
+            raise ServiceError(ErrorCode.PROVIDER_TIMEOUT, "lento")
+        return super().generate(prompt, request, count, variant)
+
+
+def test_partial_failure_releases_only_the_missing_images():
+    service, budget = make_service(FailsOnSecondImage(), limit=5)
+
+    with pytest.raises(ServiceError) as info:
+        service.generate(DesignRequest(**{**PAYLOAD, "count": 2}))
+
+    assert info.value.code == ErrorCode.PROVIDER_TIMEOUT
+    assert budget.used_today() == 1  # the first image was generated (and paid for)

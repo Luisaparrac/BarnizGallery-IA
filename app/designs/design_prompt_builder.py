@@ -1,7 +1,8 @@
 """Builds the English prompt sent to the image provider.
 
 Pattern: **Builder**. The prompt is assembled step by step (craft, object, style, colours,
-motifs, size, customer notes, photography, restrictions) through chainable ``with_*``
+motifs, size, customer notes, composition, photography, restrictions) through chainable
+``with_*``
 methods, and ``build`` joins the parts in a fixed order. ``for_request`` acts as the
 director: it applies every step needed for a ``DesignRequest``. The fixed parts (craft
 description, photography and restrictions) are always included, even if a caller forgets
@@ -11,6 +12,7 @@ a step.
 import re
 from typing import Self
 
+from app.designs.compositions import Composition
 from app.schemas.designs import DesignColor, DesignRequest
 
 CRAFT = (
@@ -18,9 +20,10 @@ CRAFT = (
     "very thin sheets of coloured natural resin, hand-cut and applied over carved wood, "
     "forming flat, crisp, layered shapes with a glossy lacquered finish."
 )
+DEFAULT_FRAMING = "Centered product photograph of the whole piece."
 PHOTOGRAPHY = (
-    "Centered product photograph of the whole piece on a plain neutral cream background, "
-    "soft diffuse studio lighting, sharp focus, realistic materials."
+    "Product photograph on a plain neutral cream background, soft diffuse studio lighting, "
+    "sharp focus, realistic materials."
 )
 RESTRICTIONS = "No people, no hands, no text, no letters, no watermarks and no logos."
 
@@ -40,10 +43,11 @@ class DesignPromptBuilder:
         self._title: str | None = None
         self._description: str | None = None
         self._customer_language = "es"
+        self._composition: Composition | None = None
 
     @classmethod
-    def for_request(cls, request: DesignRequest) -> str:
-        """Director: build the full prompt for a design request."""
+    def for_request(cls, request: DesignRequest, composition: Composition | None = None) -> str:
+        """Director: build the full prompt for a design request (and one composition)."""
         return (
             cls()
             .with_object(request.shape)
@@ -52,6 +56,7 @@ class DesignPromptBuilder:
             .with_motifs(request.motifs)
             .with_size_notes(request.size_notes)
             .with_customer_notes(request.title, request.description, request.language)
+            .with_composition(composition)
             .build()
         )
 
@@ -81,6 +86,10 @@ class DesignPromptBuilder:
         self._customer_language = language
         return self
 
+    def with_composition(self, composition: Composition | None) -> Self:
+        self._composition = composition
+        return self
+
     def build(self) -> str:
         parts = [CRAFT]
         if self._object:
@@ -98,6 +107,7 @@ class DesignPromptBuilder:
             language = "Spanish" if self._customer_language == "es" else "English"
             notes = " - ".join(text for text in (self._title, self._description) if text)
             parts.append(f'Customer request (written in {language}): "{notes}".')
+        parts.append(self._composition.prompt if self._composition else DEFAULT_FRAMING)
         parts.append(PHOTOGRAPHY)
         parts.append(RESTRICTIONS)
         return " ".join(parts)

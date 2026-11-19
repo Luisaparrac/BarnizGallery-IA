@@ -29,6 +29,10 @@ class DesignRequest(BaseModel):
 class GeneratedImage(BaseModel):
     image_base64: str
     mime_type: str = "image/png"
+    #: ``top``, ``three_quarter`` or ``detail`` when several images were requested.
+    composition: str | None = None
+    #: Exact prompt sent for this image.
+    prompt: str | None = None
 
 
 class DesignResponse(BaseModel):

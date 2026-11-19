@@ -22,8 +22,13 @@ class ImageProvider(ABC):
         """Model (or engine) name reported in the response."""
 
     @abstractmethod
-    def generate(self, prompt: str, request: DesignRequest, count: int) -> list[GeneratedImage]:
+    def generate(
+        self, prompt: str, request: DesignRequest, count: int, variant: int = 0
+    ) -> list[GeneratedImage]:
         """Return ``count`` images for the prompt.
+
+        ``variant`` is the position of the first image in the request; providers that are
+        deterministic (the fake one) use it so that each image looks different.
 
         Raises ``ServiceError`` with ``content_rejected``, ``provider_error`` or
         ``provider_timeout`` when the backend fails.
