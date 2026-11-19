@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from app.core.config import Settings
 from app.core.errors import ErrorCode, ServiceError
+from app.core.request_context import set_field
 from app.designs.compositions import Composition, compositions_for
 from app.designs.daily_image_budget import DailyImageBudget
 from app.designs.design_prompt_builder import DesignPromptBuilder
@@ -43,6 +44,8 @@ class DesignService:
                 ErrorCode.INVALID_REQUEST,
                 f"Puedes pedir como máximo {limit} imágenes por llamada.",
             )
+        set_field("provider", self._provider.name)
+        set_field("model", self._provider.model)
         self._moderator.check(request)
 
         compositions = compositions_for(request.count)
@@ -51,6 +54,7 @@ class DesignService:
         if self._provider.billable:
             self._budget.reserve(len(prompts), self._settings.daily_image_limit)
         images = self._render_all(request, compositions, prompts)
+        set_field("images", len(images))
 
         return DesignResponse(
             provider=self._provider.name,

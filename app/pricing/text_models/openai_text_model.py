@@ -14,6 +14,7 @@ import openai
 from openai import OpenAI
 
 from app.core.errors import ErrorCode, ServiceError
+from app.core.request_context import set_field
 from app.pricing.text_models.text_model import TextModel
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,8 @@ class OpenAITextModel(TextModel):
     def generate_json(
         self, instructions: str, prompt: str, schema_name: str, schema: dict[str, Any]
     ) -> dict[str, Any]:
+        set_field("provider", "openai")
+        set_field("model", self._model)
         try:
             response = self._client.responses.create(
                 model=self._model,
@@ -57,6 +60,12 @@ class OpenAITextModel(TextModel):
         except openai.OpenAIError as exc:
             logger.error("OpenAI text error: %s", type(exc).__name__)
             raise ServiceError(ErrorCode.PROVIDER_ERROR, "El modelo de texto falló.") from exc
+
+        usage = getattr(response, "usage", None)
+        for name in ("input_tokens", "output_tokens"):
+            tokens = getattr(usage, name, None)
+            if isinstance(tokens, int):
+                set_field(name, tokens)
 
         try:
             data = json.loads(response.output_text)

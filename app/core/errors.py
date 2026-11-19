@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.request_context import set_field
 from app.core.responses import Utf8JSONResponse
 
 
@@ -57,6 +58,7 @@ class ServiceError(Exception):
 def error_response(
     status_code: int, code: ErrorCode, message: str, headers: dict[str, str] | None = None
 ) -> Utf8JSONResponse:
+    set_field("error_code", str(code))
     return Utf8JSONResponse(
         status_code=status_code, content={"code": code, "message": message}, headers=headers
     )

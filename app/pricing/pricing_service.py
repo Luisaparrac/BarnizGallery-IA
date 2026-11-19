@@ -14,6 +14,7 @@ The price is always a suggestion for the artisan, who makes the final decision.
 import logging
 
 from app.core.errors import ServiceError
+from app.core.request_context import set_field
 from app.pricing.comparable_price_estimator import ComparablePriceEstimator, PriceEstimate
 from app.pricing.llm_price_advisor import LlmPriceAdvisor
 from app.schemas.pricing import PricingRequest, PricingResponse
@@ -52,6 +53,7 @@ class PricingService:
     def _response(
         estimate: PriceEstimate, price: float, method: str, explanation: str
     ) -> PricingResponse:
+        set_field("method", method)
         return PricingResponse(
             suggested_price=price,
             min_price=estimate.min_price,

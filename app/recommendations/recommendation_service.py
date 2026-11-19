@@ -8,6 +8,7 @@ Pattern: **Facade** (and the *context* of the Strategy pattern). The route only 
 - ``popular`` when there is neither.
 """
 
+from app.core.request_context import set_field
 from app.recommendations.strategies.content_based_strategy import ContentBasedStrategy
 from app.recommendations.strategies.hybrid_strategy import HybridStrategy
 from app.recommendations.strategies.popularity_strategy import PopularityStrategy
@@ -18,6 +19,7 @@ from app.schemas.recommendations import RecommendationRequest, RecommendationRes
 class RecommendationService:
     def recommend(self, request: RecommendationRequest) -> RecommendationResponse:
         strategy = self.choose_strategy(request)
+        set_field("strategy", strategy.name)
         return RecommendationResponse(strategy=strategy.name, items=strategy.rank(request))
 
     @staticmethod

@@ -1,5 +1,7 @@
 """Application entry point: builds the FastAPI app."""
 
+import os
+
 from fastapi import Depends, FastAPI
 
 from app import __version__
@@ -7,6 +9,7 @@ from app.api import designs, health, pricing, recommendations
 from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import Settings, get_settings
 from app.core.errors import register_error_handlers
+from app.core.logging_config import AccessLogMiddleware, setup_logging
 from app.core.rate_limiter import SlidingWindowRateLimiter
 from app.core.request_context import RequestContextMiddleware
 from app.core.responses import Utf8JSONResponse
@@ -33,7 +36,9 @@ def create_app() -> FastAPI:
     app.add_middleware(
         BodySizeLimitMiddleware, max_bytes=lambda: current_settings(app).max_request_bytes
     )
-    # Added last, so it is the outermost: even 413 responses carry the X-Request-ID.
+    app.add_middleware(AccessLogMiddleware)
+    # Added last, so it is the outermost: every log line and even 413 responses carry
+    # the X-Request-ID.
     app.add_middleware(RequestContextMiddleware)
     app.include_router(health.router)
 
@@ -47,4 +52,6 @@ def create_app() -> FastAPI:
     return app
 
 
+# LOG_LEVEL is read directly (not through Settings) so importing the app never needs .env.
+setup_logging(os.getenv("LOG_LEVEL", "INFO"))
 app = create_app()
