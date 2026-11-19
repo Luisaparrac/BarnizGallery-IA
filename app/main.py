@@ -4,9 +4,16 @@ from fastapi import Depends, FastAPI
 
 from app import __version__
 from app.api import designs, health, pricing, recommendations
+from app.core.body_limit import BodySizeLimitMiddleware
+from app.core.config import Settings, get_settings
 from app.core.errors import register_error_handlers
 from app.core.responses import Utf8JSONResponse
 from app.core.security import require_api_key
+
+
+def current_settings(app: FastAPI) -> Settings:
+    """Settings as the routes see them (honours ``dependency_overrides`` in tests)."""
+    return app.dependency_overrides.get(get_settings, get_settings)()
 
 
 def create_app() -> FastAPI:
@@ -18,6 +25,9 @@ def create_app() -> FastAPI:
         default_response_class=Utf8JSONResponse,
     )
     register_error_handlers(app)
+    app.add_middleware(
+        BodySizeLimitMiddleware, max_bytes=lambda: current_settings(app).max_request_bytes
+    )
     app.include_router(health.router)
 
     protected = {"prefix": "/v1", "dependencies": [Depends(require_api_key)]}

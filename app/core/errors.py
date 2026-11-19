@@ -68,6 +68,8 @@ async def _handle_validation_error(_: Request, exc: RequestValidationError) -> U
 async def _handle_http_error(_: Request, exc: StarletteHTTPException) -> Utf8JSONResponse:
     if exc.status_code == 401:
         return error_response(401, ErrorCode.UNAUTHORIZED, "No autorizado.")
+    if exc.status_code == 413:
+        return error_response(413, ErrorCode.INVALID_REQUEST, "La solicitud es demasiado grande.")
     return error_response(
         exc.status_code, ErrorCode.INVALID_REQUEST, "La ruta o el método no son válidos."
     )

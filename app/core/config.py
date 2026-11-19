@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     provider_timeout_seconds: float = Field(default=90, gt=0)
     max_images_per_request: int = Field(default=2, ge=1)
+    max_request_bytes: int = Field(default=1_000_000, ge=1024)
 
     #: Set by Render at runtime; shown in /health to know which commit is deployed.
     render_git_commit: str | None = None
