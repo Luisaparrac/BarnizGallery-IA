@@ -5,10 +5,13 @@ Pattern: **Factory Method**. ``create`` hides which concrete ``ImageProvider`` i
 and the routes never import a concrete provider.
 """
 
+from openai import OpenAI
+
 from app.core.config import Settings
 from app.core.errors import ErrorCode, ServiceError
 from app.designs.providers.fake_image_provider import FakeImageProvider
 from app.designs.providers.image_provider import ImageProvider
+from app.designs.providers.openai_image_provider import OpenAIImageProvider
 
 
 class ImageProviderFactory:
@@ -17,6 +20,18 @@ class ImageProviderFactory:
         match settings.image_provider:
             case "fake":
                 return FakeImageProvider()
+            case "openai":
+                client = OpenAI(
+                    api_key=settings.openai_api_key.get_secret_value(),
+                    timeout=settings.provider_timeout_seconds,
+                    max_retries=0,
+                )
+                return OpenAIImageProvider(
+                    client=client,
+                    model=settings.openai_image_model,
+                    quality=settings.openai_image_quality,
+                    size=settings.openai_image_size,
+                )
             case _:
                 raise ServiceError(
                     ErrorCode.FEATURE_DISABLED,
