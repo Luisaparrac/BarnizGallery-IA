@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 
 from app import __version__
+from app.api import health
 from app.core.errors import register_error_handlers
 
 
@@ -14,6 +15,7 @@ def create_app() -> FastAPI:
         version=__version__,
     )
     register_error_handlers(app)
+    app.include_router(health.router)
     return app
 
 
