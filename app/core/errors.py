@@ -8,8 +8,9 @@ from enum import StrEnum
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from app.core.responses import Utf8JSONResponse
 
 
 class ErrorCode(StrEnum):
@@ -46,15 +47,15 @@ class ServiceError(Exception):
         return STATUS_BY_CODE[self.code]
 
 
-def error_response(status_code: int, code: ErrorCode, message: str) -> JSONResponse:
-    return JSONResponse(status_code=status_code, content={"code": code, "message": message})
+def error_response(status_code: int, code: ErrorCode, message: str) -> Utf8JSONResponse:
+    return Utf8JSONResponse(status_code=status_code, content={"code": code, "message": message})
 
 
-async def _handle_service_error(_: Request, exc: ServiceError) -> JSONResponse:
+async def _handle_service_error(_: Request, exc: ServiceError) -> Utf8JSONResponse:
     return error_response(exc.status_code, exc.code, exc.message)
 
 
-async def _handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+async def _handle_validation_error(_: Request, exc: RequestValidationError) -> Utf8JSONResponse:
     message = "La solicitud no es válida."
     errors = exc.errors()
     if errors:
@@ -64,7 +65,7 @@ async def _handle_validation_error(_: Request, exc: RequestValidationError) -> J
     return error_response(400, ErrorCode.INVALID_REQUEST, message)
 
 
-async def _handle_http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+async def _handle_http_error(_: Request, exc: StarletteHTTPException) -> Utf8JSONResponse:
     if exc.status_code == 401:
         return error_response(401, ErrorCode.UNAUTHORIZED, "No autorizado.")
     return error_response(

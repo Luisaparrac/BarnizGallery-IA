@@ -5,6 +5,7 @@ from fastapi import Depends, FastAPI
 from app import __version__
 from app.api import designs, health, pricing, recommendations
 from app.core.errors import register_error_handlers
+from app.core.responses import Utf8JSONResponse
 from app.core.security import require_api_key
 
 
@@ -14,6 +15,7 @@ def create_app() -> FastAPI:
         title="MUSEO - Servicio de IA",
         description="Diseños, recomendaciones y precio sugerido para el Barniz de Pasto Mopa-Mopa.",
         version=__version__,
+        default_response_class=Utf8JSONResponse,
     )
     register_error_handlers(app)
     app.include_router(health.router)
