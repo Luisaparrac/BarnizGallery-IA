@@ -37,14 +37,20 @@ def profile_features(profile: TasteProfile | None) -> list[str]:
 
 
 class FeatureVectorizer:
-    def __init__(self, candidates: Iterable[Candidate], profile: TasteProfile | None = None):
+    def __init__(
+        self,
+        candidates: Iterable[Candidate],
+        profile: TasteProfile | None = None,
+        group_weights: dict[str, float] | None = None,
+    ):
+        weights = group_weights or GROUP_WEIGHTS
         vocabulary = set(profile_features(profile))
         for candidate in candidates:
             vocabulary.update(candidate_features(candidate))
         self._features = sorted(vocabulary)
         self._index = {feature: position for position, feature in enumerate(self._features)}
         self._weights = np.array(
-            [GROUP_WEIGHTS[feature.split(":", 1)[0]] for feature in self._features], dtype=float
+            [weights[feature.split(":", 1)[0]] for feature in self._features], dtype=float
         )
 
     @property

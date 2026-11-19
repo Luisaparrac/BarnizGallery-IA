@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     max_request_bytes: int = Field(default=1_000_000, ge=1024)
     rate_limit_per_minute: int = Field(default=20, ge=1)
 
+    # Recommendation weights (see RecommendationWeights).
+    reco_weight_color: float = Field(default=1.0, ge=0)
+    reco_weight_shape: float = Field(default=1.5, ge=0)
+    reco_weight_style: float = Field(default=1.2, ge=0)
+    reco_weight_motif: float = Field(default=1.3, ge=0)
+    reco_budget_share: float = Field(default=0.15, ge=0, le=1)
+    reco_profile_share: float = Field(default=0.6, ge=0, le=1)
+
     # Prices used only to *estimate* the cost in /v1/metrics (the OpenAI bill is the truth).
     openai_image_cost_usd: float = Field(default=0.053, ge=0)
     openai_text_input_usd_per_mtok: float = Field(default=0.10, ge=0)
@@ -53,6 +61,14 @@ class Settings(BaseSettings):
         uses_openai = self.image_provider == "openai" or self.text_provider == "openai"
         if uses_openai and not self.openai_api_key.get_secret_value():
             raise ValueError("OPENAI_API_KEY is required when an OpenAI provider is enabled")
+        reco_groups = (
+            self.reco_weight_color,
+            self.reco_weight_shape,
+            self.reco_weight_style,
+            self.reco_weight_motif,
+        )
+        if not any(reco_groups):
+            raise ValueError("At least one RECO_WEIGHT_* must be greater than 0")
         if self.text_provider == "openai" and not self.openai_text_model:
             raise ValueError("OPENAI_TEXT_MODEL is required when TEXT_PROVIDER=openai")
         return self

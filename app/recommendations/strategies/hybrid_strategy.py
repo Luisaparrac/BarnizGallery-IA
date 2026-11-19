@@ -24,7 +24,6 @@ ACTION_WEIGHTS: dict[InteractionAction, float] = {
 VIEW_MIN_WEIGHT = 0.2
 VIEW_MAX_WEIGHT = 1.0
 VIEW_FULL_SECONDS = 120
-PROFILE_SHARE = 0.6
 
 
 def interaction_weight(interaction: Interaction) -> float:
@@ -46,7 +45,8 @@ class HybridStrategy(RecommendationStrategy):
             return profile
         if not profile.any():
             return taste
-        return PROFILE_SHARE * profile + (1 - PROFILE_SHARE) * taste
+        share = self.weights.profile_share
+        return share * profile + (1 - share) * taste
 
     @staticmethod
     def inferred_taste(

@@ -13,14 +13,22 @@ import numpy as np
 
 from app.recommendations.budget import budget_fit
 from app.recommendations.feature_vectorizer import FeatureVectorizer
+from app.recommendations.recommendation_weights import DEFAULT_WEIGHTS, RecommendationWeights
 from app.schemas.recommendations import RecommendationItem, RecommendationRequest
-
-SIMILARITY_SHARE = 0.85
-BUDGET_SHARE = 0.15
 
 
 class RecommendationStrategy(ABC):
     name: ClassVar[str]
+
+    def __init__(self, weights: RecommendationWeights = DEFAULT_WEIGHTS) -> None:
+        self.weights = weights
+
+    def blend(self, relevance: float, fit: float | None) -> float:
+        """Mix relevance with the budget fit (when the budget can be compared)."""
+        if fit is None:
+            return relevance
+        share = self.weights.budget_share
+        return (1 - share) * relevance + share * fit
 
     @abstractmethod
     def user_vector(
@@ -29,7 +37,7 @@ class RecommendationStrategy(ABC):
         """Vector of what the user likes, in the vectorizer's feature space."""
 
     def rank(self, request: RecommendationRequest) -> list[RecommendationItem]:
-        vectorizer = FeatureVectorizer(request.candidates, request.profile)
+        vectorizer = FeatureVectorizer(request.candidates, request.profile, self.weights.groups)
         user = self.user_vector(request, vectorizer)
         budget = request.profile.budget if request.profile else None
 
@@ -37,9 +45,7 @@ class RecommendationStrategy(ABC):
         for candidate in request.candidates:
             similarity = vectorizer.similarity(user, vectorizer.candidate_vector(candidate))
             fit = budget_fit(budget, candidate)
-            score = similarity
-            if fit is not None:
-                score = SIMILARITY_SHARE * similarity + BUDGET_SHARE * fit
+            score = self.blend(similarity, fit)
             reasons = vectorizer.matched_reasons(user, candidate)
             reasons.budget = None if fit is None else fit == 1.0
             item = RecommendationItem(

@@ -8,11 +8,7 @@ import numpy as np
 
 from app.recommendations.budget import budget_fit
 from app.recommendations.feature_vectorizer import FeatureVectorizer
-from app.recommendations.strategies.recommendation_strategy import (
-    BUDGET_SHARE,
-    SIMILARITY_SHARE,
-    RecommendationStrategy,
-)
+from app.recommendations.strategies.recommendation_strategy import RecommendationStrategy
 from app.schemas.recommendations import Reasons, RecommendationItem, RecommendationRequest
 
 
@@ -32,9 +28,7 @@ class PopularityStrategy(RecommendationStrategy):
         for candidate in request.candidates:
             popularity = candidate.popularity / top if top > 0 else 0.0
             fit = budget_fit(budget, candidate)
-            score = popularity
-            if fit is not None:
-                score = SIMILARITY_SHARE * popularity + BUDGET_SHARE * fit
+            score = self.blend(popularity, fit)
             reasons = Reasons(budget=None if fit is None else fit == 1.0)
             items.append(
                 RecommendationItem(
