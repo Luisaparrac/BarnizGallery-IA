@@ -44,8 +44,24 @@ def test_similarity_reflects_the_pieces(index):
 
 
 def test_shared_traits(index):
-    assert index.shared_traits("jarron-flora-azul", "jarron-flora-dorada") == ["flora densa"]
+    assert index.shared_traits("jarron-flora-azul", "jarron-flora-dorada") == [
+        "flora densa",
+        "forma de jarrón",
+    ]
     assert index.shared_traits("tradicion", "bargueno-colonial") == []
+
+
+def test_shared_traits_add_catalog_figures_and_shape(index):
+    assert index.shared_traits("tradicion", "mensajero-ancestral") == [
+        "retrato indígena",
+        "figura humana",
+        "forma de banco",
+    ]
+
+
+def test_shared_traits_do_not_repeat_what_a_trait_already_says(index):
+    # Both are "floral", but "flora" is already inside "flora densa".
+    assert index.shared_traits("bargueno-colonial", "jarron-flora-azul") == ["flora densa"]
 
 
 def test_missing_file_returns_none(tmp_path):

@@ -18,6 +18,32 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 
 logger = logging.getLogger(__name__)
 
+#: Spanish labels of the catalog codes, for "what they have in common".
+MOTIF_LABELS = {
+    "floral": "flora",
+    "geometrico": "diseños geométricos",
+    "paisaje": "paisaje andino",
+    "antropomorfo": "figura humana",
+    "precolombino": "diseños precolombinos",
+    "zoomorfo": "animales",
+    "religioso": "motivos religiosos",
+    "abstracto": "formas abstractas",
+}
+SHAPE_LABELS = {
+    "jarron": "jarrón",
+    "mascara": "máscara",
+    "banco": "banco",
+    "plato": "plato",
+    "mueble": "mueble",
+    "cuadro": "cuadro",
+    "escultura": "escultura",
+    "bandeja": "bandeja",
+    "caja": "caja",
+    "cuenco": "cuenco",
+    "joyero": "joyero",
+    "marco": "marco",
+}
+
 
 class IndexedArtwork(BaseModel):
     slug: str
@@ -119,9 +145,25 @@ class CatalogIndex:
         return self.cosine(first, second)
 
     def shared_traits(self, a: str, b: str) -> list[str]:
-        """Traits two artworks share (Spanish, in the order of the first one)."""
+        """What two artworks have in common, in Spanish.
+
+        First the identical traits the vision model wrote for both ("flora densa"), then the
+        catalog figures they share ("diseños precolombinos") and the same shape ("forma de
+        jarrón"). A label already contained in an earlier one is not repeated.
+        """
         first, second = self.artwork(a), self.artwork(b)
         if first is None or second is None:
             return []
         others = {trait.lower() for trait in second.traits}
-        return [trait for trait in first.traits if trait.lower() in others]
+        shared = [trait for trait in first.traits if trait.lower() in others]
+        for motif in first.motifs:
+            if motif in second.motifs and motif in MOTIF_LABELS:
+                shared.append(MOTIF_LABELS[motif])
+        if first.shape and first.shape == second.shape:
+            shared.append(f"forma de {SHAPE_LABELS.get(first.shape, first.shape)}")
+
+        unique: list[str] = []
+        for label in shared:
+            if not any(label.lower() in kept.lower() for kept in unique):
+                unique.append(label)
+        return unique

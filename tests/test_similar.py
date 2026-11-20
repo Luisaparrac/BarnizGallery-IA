@@ -49,9 +49,10 @@ def test_most_similar_first_with_reasons(client):
     assert [item["slug"] for item in items][:2] == ["jarron-flora-dorada", "bargueno-colonial"]
     first = items[0]
     assert first["same_master"] is True
-    assert first["shared_traits"] == ["flora densa"]
+    assert first["shared_traits"] == ["flora densa", "forma de jarrón"]
     assert first["explanation"] == (
-        "Comparte con «Jarrón Flora Azul»: flora densa. También es de Gilberto Granja."
+        "Comparte con «Jarrón Flora Azul»: flora densa y forma de jarrón. "
+        "También es de Gilberto Granja."
     )
     assert 0 <= items[-1]["score"] <= first["score"] <= 1
 
