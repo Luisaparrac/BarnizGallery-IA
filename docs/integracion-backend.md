@@ -31,7 +31,7 @@ ai.service.key=${AI_SERVICE_KEY:}
 Si `AI_SERVICE_URL` está vacía, se usa `DisabledAiServiceGateway` y el backend sigue con sus
 reglas fijas (ver sección 3).
 
-## 2. Reglas generales del contrato (versión 1.2)
+## 2. Reglas generales del contrato (versión 1.3)
 
 - **Autenticación:** todas las rutas, menos `/health`, exigen el header
   `X-API-Key: <AI_SERVICE_KEY>`. Si falta o es incorrecta, la respuesta es `401`.
@@ -235,6 +235,16 @@ Salida:
 - **`confidence`:** `high` (8+ comparables con 70 %+ de parecido), `medium` (5+ y 50 %+) o
   `low`. Con `low`, muéstralo como una referencia débil.
 - Es una **sugerencia** para el artesano: muéstrala como tal y deja que él decida.
+- **Modo subasta (nuevo en 1.3):** con `"mode": "auction"` la respuesta trae además:
+
+  ```json
+  "auction": {"starting_price": 90, "reserve_price": 95, "min_increment": 2, "currency": "USD",
+              "explanation": "Salida en 90 USD: el 25 % más bajo de los precios de piezas parecidas. ..."}
+  ```
+
+  Salida = percentil 25 de los comparables, reserva = su mediana ponderada (sin el ajuste del
+  modelo de texto), incremento mínimo = una décima del rango (al menos 1). Sin `mode` o con
+  `"sale"`, `auction` llega `null`.
 
 ### `GET /v1/metrics`
 
@@ -282,6 +292,56 @@ Salida:
 - Errores: `422 not_enough_data` si la obra no está en el índice; `503 feature_disabled` si el
   servicio no tiene índice. En ambos casos, oculta la sección o usa tu regla actual (por ejemplo,
   obras de la misma sala).
+
+### `POST /v1/bids/assess`: pujas sospechosas (nuevo en 1.3)
+
+El backend la llama **antes de guardar cada puja**. **Nunca rechaza:** la puja se guarda
+siempre; si llega `SUSPICIOUS`, se guarda marcada para que el administrador la revise.
+
+Entrada:
+
+```json
+{
+  "auction": {
+    "auction_id": 7, "base_price": 100, "current_bid": 120, "leader_bidder_id": 55,
+    "min_increment": 5, "currency": "USD",
+    "ends_at": "2026-11-20T20:00:00Z", "last_bid_at": "2026-11-20T19:05:00Z"
+  },
+  "bid": {"bidder_id": 81, "amount": 1200, "placed_at": "2026-11-20T19:20:00Z"},
+  "bidder": {
+    "account_created_at": "2026-11-20T15:00:00Z",
+    "bids": [{"amount": 110, "placed_at": "2026-11-20T19:01:00Z", "raised_own": false}]
+  }
+}
+```
+
+| Campo | Qué es |
+|---|---|
+| `auction.base_price` | Precio base o de salida de la subasta |
+| `auction.current_bid` / `leader_bidder_id` | Puja ganadora actual y quién la tiene (`null` si nadie ha pujado) |
+| `auction.ends_at` / `last_bid_at` | Cierre y hora de la última puja de cualquier postor (`last_bid_at` opcional) |
+| `bid` | La puja nueva: postor, monto y hora |
+| `bidder.account_created_at` | Fecha de creación de la cuenta del postor |
+| `bidder.bids` | Pujas anteriores de **ese postor en esa subasta**; `raised_own` = la hizo cuando ya iba ganando |
+
+Todas las fechas con zona horaria (ISO 8601, por ejemplo con `Z`).
+
+Salida:
+
+```json
+{"status": "SUSPICIOUS", "score": 0.99,
+ "reasons": ["Salto de 10 veces la puja actual",
+             "Cuenta creada hace 4 horas con una puja de 12 veces el precio base"],
+ "method": "model"}
+```
+
+- `status`: `OK` o `SUSPICIOUS`. `score` de 0 (normal) a 1 (muy rara).
+- `reasons`: en español, para mostrarle al administrador ("Salto de 8 veces la puja actual",
+  "5 pujas en 30 segundos", "Cuenta creada hace 5 horas con una puja de 3,6 veces el precio
+  base", "Subió su propia puja 3 veces").
+- `method`: `model` (detector entrenado + reglas) o `rules` (solo reglas, si no hay modelo).
+- **El detector se entrenó con datos SINTÉTICOS** (no hay subastas reales todavía): úsalo para
+  priorizar la revisión, no para sancionar automáticamente.
 
 ## 3. Cliente del servicio de IA en Spring (Adapter)
 
@@ -333,6 +393,8 @@ public interface AiServiceGateway {
     AiDesignResponse generateDesigns(AiDesignRequest request);
 
     AiSimilarResponse similar(AiSimilarRequest request);
+
+    AiBidAssessment assessBid(AiBidAssessRequest request);
 }
 ```
 
@@ -379,6 +441,11 @@ public class AiServiceClient implements AiServiceGateway {
     @Override
     public AiSimilarResponse similar(AiSimilarRequest request) {
         return post(quick, "/v1/similar", request, AiSimilarResponse.class);
+    }
+
+    @Override
+    public AiBidAssessment assessBid(AiBidAssessRequest request) {
+        return post(quick, "/v1/bids/assess", request, AiBidAssessment.class);
     }
 
     private static <T> T post(RestClient client, String uri, Object body, Class<T> type) {
@@ -428,6 +495,11 @@ public class DisabledAiServiceGateway implements AiServiceGateway {
 
     @Override
     public AiSimilarResponse similar(AiSimilarRequest request) {
+        throw disabled();
+    }
+
+    @Override
+    public AiBidAssessment assessBid(AiBidAssessRequest request) {
         throw disabled();
     }
 
@@ -663,6 +735,34 @@ Notas:
   vacíos: el motivo queda en "Obras populares en la galería.".
 - Si hay más de 100 obras disponibles, solo cuentan las 100 mejor puntuadas.
 
+### Pujas: `assessBid` antes de guardar
+
+En el servicio de subastas, justo antes de guardar cada puja:
+
+```java
+public Bid placeBid(Auction auction, User bidder, BigDecimal amount) {
+    Bid bid = Bid.of(auction, bidder, amount, Instant.now());
+    if (aiService.isAvailable()) {
+        try {
+            AiBidAssessment result = aiService.assessBid(toAssessRequest(auction, bidder, bid));
+            if ("SUSPICIOUS".equals(result.status())) {
+                bid.flagForReview(result.score(), result.reasons());   // nunca se rechaza
+            }
+        } catch (AiServiceException | ResourceAccessException e) {
+            log.warn("Puja sin evaluación de IA: {}", e.getMessage());
+            // Se guarda normal; si quieres, aplica aquí tu regla actual (suspicious_multiplier).
+        }
+    }
+    return bids.save(bid);
+}
+```
+
+- Guarda `score` y `reasons` junto a la puja (por ejemplo `flagged_for_review`,
+  `review_score`, `review_reasons`) y muéstralas en el panel del administrador.
+- `toAssessRequest` arma el JSON de la sección 2 con el estado de la subasta **antes** de esta
+  puja y las pujas anteriores de ese postor en esa subasta.
+- Usa el `RestClient` de 10 s: si la IA no responde a tiempo, la puja se guarda igual.
+
 ### Diseños
 
 El servicio de encargos llama a `aiService.generateDesigns(...)` solo si
@@ -706,11 +806,25 @@ public record AiSimilarItem(Long artworkId, String slug, Long storeId, double sc
 
 // Precio
 public record AiPriceSuggestion(double suggestedPrice, double minPrice, double maxPrice,
-        String currency, String method, String explanation, String confidence) {}
+        String currency, String method, String explanation, String confidence,
+        AiAuctionSuggestion auction) {}
+public record AiAuctionSuggestion(double startingPrice, double reservePrice, double minIncrement,
+        String currency, String explanation) {}
+
+// Pujas
+public record AiBidAssessRequest(AiAuctionContext auction, AiNewBid bid, AiBidderHistory bidder) {}
+public record AiAuctionContext(Long auctionId, double basePrice, Double currentBid,
+        Long leaderBidderId, double minIncrement, String currency, OffsetDateTime endsAt,
+        OffsetDateTime lastBidAt) {}
+public record AiNewBid(Long bidderId, double amount, OffsetDateTime placedAt) {}
+public record AiPastBid(double amount, OffsetDateTime placedAt, boolean raisedOwn) {}
+public record AiBidderHistory(OffsetDateTime accountCreatedAt, List<AiPastBid> bids) {}
+public record AiBidAssessment(String status, double score, List<String> reasons,
+        String method) {}
 ```
 
 `AiTasteProfile`, `AiInteraction`, `AiCandidate` (con el `slug` opcional) y `AiPricingRequest`
-siguen igual los campos de la sección 2. `budget` en `AiRecommendationReasons` es `Boolean` porque puede llegar `null`.
+(con el `mode` opcional: `sale` o `auction`) siguen igual los campos de la sección 2. `budget` en `AiRecommendationReasons` es `Boolean` porque puede llegar `null`.
 
 `AiServiceException` es una excepción propia (`RuntimeException`) con `status`, `code` y
 `message`. Los timeouts y errores de red llegan como `ResourceAccessException`.
