@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI
 
 from app import __version__
-from app.api import designs, health, metrics, pricing, recommendations
+from app.api import designs, health, metrics, pricing, recommendations, similar
 from app.api.openapi_docs import install_openapi
 from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import Settings, get_settings
@@ -93,6 +93,7 @@ def create_app(
     }
     app.include_router(designs.router, **protected)
     app.include_router(recommendations.router, **protected)
+    app.include_router(similar.router, **protected)
     app.include_router(pricing.router, **protected)
     app.include_router(metrics.router, **protected)
     install_openapi(app)
