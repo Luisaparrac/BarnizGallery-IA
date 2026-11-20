@@ -69,6 +69,16 @@ class PricingRequest(BaseModel):
     piece: PieceDescription
     comparables: list[ComparablePiece] = Field(default_factory=list, max_length=500)
     currency: Currency
+    #: ``auction`` also returns the recommended starting price, reserve and minimum increment.
+    mode: Literal["sale", "auction"] = "sale"
+
+
+class AuctionSuggestion(BaseModel):
+    starting_price: float
+    reserve_price: float
+    min_increment: float
+    currency: str
+    explanation: str
 
 
 class PricingResponse(BaseModel):
@@ -80,3 +90,5 @@ class PricingResponse(BaseModel):
     explanation: str
     #: low / medium / high, from how many comparables were used and how similar they are.
     confidence: Literal["low", "medium", "high"]
+    #: Only with ``mode: "auction"``.
+    auction: AuctionSuggestion | None = None

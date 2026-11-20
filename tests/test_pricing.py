@@ -295,6 +295,7 @@ def test_endpoint_returns_contract(client, auth_headers):
         "method": "comparables",
         "explanation": response.json()["explanation"],
         "confidence": "medium",
+        "auction": None,  # only filled with mode "auction"
     }
 
 
@@ -428,3 +429,72 @@ def test_llm_answer_keeps_the_confidence():
     service, _ = service_with({"suggested_price": 100, "explanation": "x"})
 
     assert service.suggest(make_request(SIX)).confidence == "medium"
+
+
+# --- Auction mode -----------------------------------------------------------------------
+
+
+def test_auction_mode_uses_quartiles_and_range():
+    request = PricingRequest(piece=PIECE, comparables=SIX, currency="USD", mode="auction")
+
+    response = PricingService(LlmPriceAdvisor(DisabledTextModel())).suggest(request)
+
+    auction = response.auction
+    assert (auction.starting_price, auction.reserve_price) == (90, 95)
+    assert auction.min_increment == 2  # (115 - 90) / 10 = 2.5 -> 2
+    assert auction.starting_price == response.min_price
+    assert auction.reserve_price == response.suggested_price
+    assert "Salida en 90 USD" in auction.explanation
+    assert "Reserva en 95 USD" in auction.explanation
+
+
+def test_auction_increment_is_at_least_one():
+    same_price = [comparable(100, True) for _ in range(4)]
+    request = PricingRequest(piece=PIECE, comparables=same_price, currency="USD", mode="auction")
+
+    auction = PricingService(LlmPriceAdvisor(DisabledTextModel())).suggest(request).auction
+
+    assert auction.min_increment == 1
+    assert auction.starting_price == auction.reserve_price == 100
+
+
+def test_auction_reserve_ignores_the_text_model_adjustment():
+    service, _ = service_with({"suggested_price": 110, "explanation": "Ajustado."})
+    request = PricingRequest(piece=PIECE, comparables=SIX, currency="USD", mode="auction")
+
+    response = service.suggest(request)
+
+    assert response.suggested_price == 110  # the text model adjusts the sale price...
+    assert response.auction.reserve_price == 95  # ...but the reserve stays on the data
+
+
+def test_auction_mode_still_needs_three_comparables():
+    request = PricingRequest(piece=PIECE, comparables=SIX[:2], currency="USD", mode="auction")
+
+    with pytest.raises(ServiceError) as info:
+        PricingService(LlmPriceAdvisor(DisabledTextModel())).suggest(request)
+
+    assert info.value.code == ErrorCode.NOT_ENOUGH_DATA
+
+
+def test_endpoint_auction_mode(client, auth_headers):
+    body = {"piece": PIECE, "comparables": SIX, "currency": "USD", "mode": "auction"}
+
+    response = client.post("/v1/pricing/suggest", json=body, headers=auth_headers)
+
+    assert response.status_code == 200
+    assert set(response.json()["auction"]) == {
+        "starting_price",
+        "reserve_price",
+        "min_increment",
+        "currency",
+        "explanation",
+    }
+
+
+def test_unknown_mode_is_invalid(client, auth_headers):
+    body = {"piece": PIECE, "comparables": SIX, "currency": "USD", "mode": "rifa"}
+
+    response = client.post("/v1/pricing/suggest", json=body, headers=auth_headers)
+
+    assert response.status_code == 400

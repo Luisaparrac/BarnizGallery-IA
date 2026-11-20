@@ -15,6 +15,7 @@ import logging
 
 from app.core.errors import ServiceError
 from app.core.request_context import set_field
+from app.pricing.auction_pricer import AuctionPricer
 from app.pricing.comparable_price_estimator import ComparablePriceEstimator, PriceEstimate
 from app.pricing.llm_price_advisor import LlmPriceAdvisor
 from app.schemas.pricing import PricingRequest, PricingResponse
@@ -36,7 +37,12 @@ class PricingService:
         estimate = ComparablePriceEstimator().estimate(
             request.piece, request.comparables, request.currency
         )
+        response = self._suggest_price(request, estimate)
+        if request.mode == "auction":
+            response.auction = AuctionPricer.suggest(estimate)
+        return response
 
+    def _suggest_price(self, request: PricingRequest, estimate: PriceEstimate) -> PricingResponse:
         if self._advisor.enabled:
             try:
                 # Only the comparables actually used: never the discarded outliers.
