@@ -19,6 +19,9 @@ class AuctionContext(BaseModel):
     min_increment: float = Field(default=1, ge=0)
     currency: Currency
     ends_at: AwareDatetime
+    last_bid_at: AwareDatetime | None = Field(
+        default=None, description="Hora de la última puja de la subasta, de cualquier postor."
+    )
 
 
 class NewBid(BaseModel):

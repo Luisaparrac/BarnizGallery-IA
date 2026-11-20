@@ -99,7 +99,7 @@ def test_future_bids_in_history_are_ignored():
 def test_vector_follows_feature_names():
     features = extract_features(make_request())
 
-    assert len(features.vector()) == len(FEATURE_NAMES) == 8
+    assert len(features.vector()) == len(FEATURE_NAMES) == 10
     assert FEATURE_NAMES[0] == "jump_ratio"
 
 
@@ -115,3 +115,16 @@ def test_dates_must_have_timezone():
             bid={"bidder_id": 1, "amount": 2, "placed_at": "2026-11-20T19:00:00Z"},
             bidder={"account_created_at": "2026-01-01T00:00:00Z"},
         )
+
+
+def test_increment_in_minimum_steps():
+    assert extract_features(make_request(amount=125)).increment_steps == pytest.approx(1.0)
+    assert extract_features(make_request(amount=6000)).increment_steps == 50.0
+    assert extract_features(make_request(amount=110)).increment_steps == 0.0
+
+
+def test_gap_since_the_auctions_last_bid():
+    quick = make_request(last_bid_at=NOW - timedelta(seconds=40))
+
+    assert extract_features(quick).log_gap_any_seconds == pytest.approx(math.log1p(40))
+    assert extract_features(make_request()).log_gap_any_seconds == pytest.approx(math.log1p(3600))
