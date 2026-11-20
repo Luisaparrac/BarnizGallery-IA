@@ -1,6 +1,7 @@
 """Application entry point: builds the FastAPI app."""
 
 import os
+from pathlib import Path
 
 from fastapi import Depends, FastAPI
 
@@ -17,6 +18,7 @@ from app.core.request_context import RequestContextMiddleware
 from app.core.responses import Utf8JSONResponse
 from app.core.security import enforce_rate_limit, require_api_key
 from app.designs.daily_image_budget import DailyImageBudget
+from app.recommendations.catalog_index import CatalogIndex
 
 
 def current_settings(app: FastAPI) -> Settings:
@@ -32,7 +34,19 @@ def env_flag(name: str, default: bool) -> bool:
     return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
-def create_app(docs_enabled: bool | None = None) -> FastAPI:
+#: Default location of the catalog index, next to the ``app`` package.
+DEFAULT_CATALOG_INDEX = Path(__file__).resolve().parent.parent / "data" / "catalog_index.json"
+_LOAD_FROM_ENVIRONMENT = object()
+
+
+def load_catalog_index() -> CatalogIndex | None:
+    """Index path from ``CATALOG_INDEX_PATH`` (read here, like ``LOG_LEVEL``)."""
+    return CatalogIndex.from_file(Path(os.getenv("CATALOG_INDEX_PATH") or DEFAULT_CATALOG_INDEX))
+
+
+def create_app(
+    docs_enabled: bool | None = None, catalog_index: object = _LOAD_FROM_ENVIRONMENT
+) -> FastAPI:
     """Create the FastAPI application.
 
     ``DOCS_ENABLED=false`` hides ``/docs``, ``/redoc`` and ``/openapi.json`` (for
@@ -60,6 +74,9 @@ def create_app(docs_enabled: bool | None = None) -> FastAPI:
     app.state.rate_limiter = SlidingWindowRateLimiter()
     app.state.image_budget = DailyImageBudget()
     app.state.metrics = MetricsRegistry()
+    app.state.catalog_index = (
+        load_catalog_index() if catalog_index is _LOAD_FROM_ENVIRONMENT else catalog_index
+    )
     register_error_handlers(app)
     app.add_middleware(
         BodySizeLimitMiddleware, max_bytes=lambda: current_settings(app).max_request_bytes

@@ -29,6 +29,9 @@ def isolate_from_dotenv(tmp_path, monkeypatch):
     """
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("AI_SERVICE_KEY", raising=False)
+    # Tests never depend on the real data/catalog_index.json: by default there is none,
+    # and the tests that need one inject the small example index.
+    monkeypatch.setenv("CATALOG_INDEX_PATH", str(tmp_path / "no-catalog-index.json"))
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

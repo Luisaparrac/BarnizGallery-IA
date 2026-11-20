@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "generated_at": "2026-11-20T00:00:00Z",
+  "vision_model": "example",
+  "embedding_model": "example",
+  "dimensions": 4,
+  "artworks": {
+    "bargueno-colonial": {
+      "slug": "bargueno-colonial", "master": "granja",
+      "title_es": "Bargueño Colonial", "title_en": "Colonial Bargueño",
+      "shape": "mueble", "colors": ["blanco", "verde", "rosado"], "motifs": ["floral", "geometrico"],
+      "style": "tradicional", "traits": ["flora densa", "grecas"],
+      "embedding": [1.0, 0.0, 0.0, 0.0]
+    },
+    "jarron-flora-azul": {
+      "slug": "jarron-flora-azul", "master": "granja",
+      "title_es": "Jarrón Flora Azul", "title_en": "Blue Flora Vase",
+      "shape": "jarron", "colors": ["azul", "verde", "blanco"], "motifs": ["floral"],
+      "style": "contemporaneo", "traits": ["flora densa", "rosas estilizadas"],
+      "embedding": [0.9, 0.3, 0.0, 0.0]
+    },
+    "jarron-flora-dorada": {
+      "slug": "jarron-flora-dorada", "master": "granja",
+      "title_es": "Jarrón Flora Dorada", "title_en": "Golden Flora Vase",
+      "shape": "jarron", "colors": ["dorado", "negro"], "motifs": ["floral"],
+      "style": "contemporaneo", "traits": ["flora densa", "dorado"],
+      "embedding": [0.8, 0.1, 0.1, 0.0]
+    },
+    "mensajero-ancestral": {
+      "slug": "mensajero-ancestral", "master": "cabrera",
+      "title_es": "Mensajero Ancestral", "title_en": "Ancestral Messenger",
+      "shape": "banco", "colors": ["azul", "verde", "rojo"], "motifs": ["antropomorfo", "precolombino"],
+      "style": "contemporaneo", "traits": ["retrato indígena", "figuras precolombinas"],
+      "embedding": [0.0, 0.0, 1.0, 0.0]
+    },
+    "tradicion": {
+      "slug": "tradicion", "master": "cabrera",
+      "title_es": "Tradición", "title_en": "Tradition",
+      "shape": "banco", "colors": ["naranja", "negro", "verde"], "motifs": ["antropomorfo", "zoomorfo"],
+      "style": "contemporaneo", "traits": ["retrato indígena", "guacamaya"],
+      "embedding": [0.0, 0.1, 0.9, 0.2]
+    }
+  },
+  "masters": {
+    "granja": {
+      "slug": "granja", "name": "Gilberto Granja",
+      "artworks": ["bargueno-colonial", "jarron-flora-azul", "jarron-flora-dorada"],
+      "traits": ["flora densa", "grecas"],
+      "embedding": [0.9, 0.13, 0.03, 0.0]
+    },
+    "cabrera": {
+      "slug": "cabrera", "name": "María Cabrera",
+      "artworks": ["mensajero-ancestral", "tradicion"],
+      "traits": ["retrato indígena", "figuras precolombinas"],
+      "embedding": [0.0, 0.05, 0.95, 0.1]
+    }
+  }
+}
