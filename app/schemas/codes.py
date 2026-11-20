@@ -20,3 +20,7 @@ CodeList = Annotated[list[Code], Field(default_factory=list, max_length=50)]
 Currency = Annotated[
     str, StringConstraints(strip_whitespace=True, to_upper=True, pattern=r"^[A-Za-z]{3}$")
 ]
+
+#: Artwork or master slug, exactly as in the museum catalog index (``bargueno-colonial``):
+#: lowercase letters and digits separated by single hyphens.
+Slug = Annotated[str, StringConstraints(max_length=120, pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$")]

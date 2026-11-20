@@ -5,7 +5,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.schemas.codes import Code, CodeList, Currency
+from app.schemas.codes import Code, CodeList, Currency, Slug
 
 
 class Budget(BaseModel):
@@ -49,6 +49,9 @@ class Interaction(BaseModel):
 
 class Candidate(BaseModel):
     artwork_id: int
+    #: Optional slug of the work in the catalog index (``bargueno-colonial``). With it, the
+    #: hybrid strategy can also use what the AI learned from the museum's real pieces.
+    slug: Slug | None = None
     store_id: int | None = None
     colors: CodeList
     shape: Code | None = None

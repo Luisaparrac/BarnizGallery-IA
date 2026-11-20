@@ -366,3 +366,37 @@ def test_maximum_diversity_shows_one_per_workshop_first():
 
 def test_diversity_comes_from_settings():
     assert RecommendationWeights.from_settings(build_settings(reco_diversity=0.8)).diversity == 0.8
+
+
+# --- Optional slug --------------------------------------------------------------------
+
+
+def test_candidate_slug_is_optional():
+    assert Candidate(artwork_id=1).slug is None
+    assert Candidate(artwork_id=1, slug="bargueno-colonial").slug == "bargueno-colonial"
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "Bargueno-Colonial",
+        " bargueno",
+        "con espacio",
+        "tilde-ñ",
+        "-inicio",
+        "doble--guion",
+        "x" * 121,
+    ],
+)
+def test_invalid_slug_is_rejected(bad):
+    with pytest.raises(ValueError):
+        Candidate(artwork_id=1, slug=bad)
+
+
+def test_requests_without_slug_work_as_before(client, auth_headers):
+    body = {"profile": {"colors": ["rojo"]}, "candidates": [{"artwork_id": 1, "colors": ["rojo"]}]}
+
+    response = client.post("/v1/recommendations", json=body, headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["artwork_id"] == 1
