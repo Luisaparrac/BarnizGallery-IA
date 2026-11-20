@@ -319,3 +319,18 @@ def test_glossary_keeps_customer_text_safe():
 
     assert "\n" not in prompt
     assert "Sol de los Pastos = " in prompt
+
+
+def test_gift_recipient_is_not_painted_as_a_figure():
+    # Contract example: "para mi abuela" names who receives it, not a human figure.
+    prompt = DesignPromptBuilder.for_request(DesignRequest(**PAYLOAD))
+
+    assert "figura humana" not in prompt
+    assert "human figures" not in prompt
+    assert "colibrí = stylized hummingbirds" in prompt
+
+
+def test_requested_portrait_still_adds_human_figures():
+    request = DesignRequest(**{**PAYLOAD, "description": "Plato con el retrato de un taita"})
+
+    assert "figura humana = human figures" in DesignPromptBuilder.for_request(request)

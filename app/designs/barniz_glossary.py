@@ -123,7 +123,9 @@ MOTIFS: tuple[GlossaryEntry, ...] = (
         "figura humana",
         "human figures and faces in the regional style, often indigenous elders with "
         "feathered headdresses",
-        ("antropomorfo", "rostro", "rostros", "retrato", "taita", "abuela", "indigena"),
+        # No family words ("abuela", "taita"): in a title they usually name who receives the
+        # gift ("Bandeja para mi abuela"), not a figure to paint.
+        ("antropomorfo", "rostro", "rostros", "retrato", "retratos", "indigena"),
     ),
     GlossaryEntry(
         "zoomorfo",
