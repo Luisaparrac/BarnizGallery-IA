@@ -54,6 +54,7 @@ flowchart LR
 | `POST /v1/designs` | Imágenes de propuesta para un encargo (simuladas u OpenAI). |
 | `POST /v1/recommendations` | Ordena obras según los gustos del cliente, con explicación en español. |
 | `POST /v1/pricing/suggest` | Sugiere un precio a partir de piezas comparables, con nivel de confianza. |
+| `POST /v1/similar` | Obras parecidas a una obra, con los rasgos que comparten. |
 | `GET /v1/metrics` | Contadores por ruta, latencia, imágenes del día y costo estimado. |
 
 Las recomendaciones y el precio usan **códigos de texto** (`"rojo"`, `"colibri"`, `"bandeja"`)
@@ -132,6 +133,9 @@ nada**: las imágenes las dibuja Pillow y el precio sale solo de los comparables
 | `RECO_BUDGET_SHARE` | Peso del presupuesto en el puntaje (0–1) | `0.15` |
 | `RECO_PROFILE_SHARE` | Peso del perfil frente a las interacciones (0–1) | `0.6` |
 | `RECO_DIVERSITY` | Diversidad por taller con MMR (0 = sin diversidad) | `0.3` |
+| `RECO_SEMANTIC_WEIGHT` | Peso del parecido con las obras que le gustaron (con índice) | `0.35` |
+| `RECO_MASTER_WEIGHT` | Peso de la afinidad con el estilo de cada maestro (con índice) | `0.15` |
+| `CATALOG_INDEX_PATH` | Ruta del índice de obras | `data/catalog_index.json` |
 | `OPENAI_IMAGE_COST_USD` | Precio por imagen para el costo estimado | `0.053` |
 | `OPENAI_TEXT_INPUT_USD_PER_MTOK` / `_OUTPUT_` | Precio por millón de tokens de texto | `0.10` / `0.50` |
 | `DOCS_ENABLED` | Mostrar `/docs`, `/redoc` y `/openapi.json` | `true` |
@@ -182,6 +186,40 @@ comparados con similitud coseno ponderada (pesos configurables), más un ajuste 
 - **Calidad medida:** `tests/test_recommendation_quality.py` usa un catálogo sintético de 80
   piezas y mide NDCG@10, el efecto de las interacciones y del presupuesto, la diversidad, la
   monotonía y el determinismo.
+
+## Cómo aprende la IA de las obras
+
+No se entrena una red neuronal: hay muy pocas obras para eso. En cambio, la IA **mira y describe**
+cada obra una vez y guarda lo que aprendió en `data/catalog_index.json`.
+
+1. **Mira cada obra.** `scripts/build_catalog_index.py` (se corre en un PC, no en Render) le
+   muestra la foto principal de cada pieza a un modelo de visión (`gpt-6-luna`) y le pide una
+   ficha en español: técnica, colores, figuras, estilo, forma, sensación y 3 a 5 rasgos que la
+   distinguen ("flora densa", "retrato frontal", "espirales negras de gran formato").
+2. **La convierte en números.** Esa ficha, junto con los datos del catálogo, se transforma en un
+   *embedding* (`text-embedding-3-small`): una lista de 256 números en la que dos obras
+   parecidas quedan cerca. Así "parecido" se puede medir.
+3. **Arma el perfil de cada maestro.** Promedia los números de sus obras y guarda sus rasgos más
+   repetidos. Por ejemplo, Gilberto Granja queda asociado a "flora densa" y "grecas geométricas".
+4. **Lo usa al recomendar.** Con la estrategia híbrida, si alguien vio, guardó o compró una obra,
+   las obras más parecidas suben (más si la compró que si solo la miró), y también las de los
+   maestros cuyo estilo coincide con lo que le gustó. La explicación lo dice: "Porque te gustó
+   «Jarrón Flora Azul» de Gilberto Granja" o "Del estilo de María Cabrera: retrato frontal".
+5. **"Obras parecidas".** `POST /v1/similar` usa los mismos números para la ficha de una pieza.
+
+Detalles:
+
+- Generar el índice de las 21 obras costó **0.0037 USD** una sola vez. Al responder no se llama a
+  OpenAI: todo sale del índice, que el servicio carga al arrancar.
+- Si el índice no existe o no es válido, el servicio funciona como antes.
+- Para que una obra use lo aprendido, el backend envía su `slug` (por ejemplo
+  `bargueno-colonial`). Sin `slug`, se recomienda como siempre.
+- Cuando se agreguen obras nuevas, se vuelve a correr el script y se sube el nuevo índice:
+
+  ```bash
+  python scripts/build_catalog_index.py            # usa OPENAI_API_KEY del .env
+  python scripts/build_catalog_index.py --dry-run  # sin OpenAI, para probar
+  ```
 
 ## Precio sugerido
 
