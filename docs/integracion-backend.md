@@ -31,7 +31,7 @@ ai.service.key=${AI_SERVICE_KEY:}
 Si `AI_SERVICE_URL` está vacía, se usa `DisabledAiServiceGateway` y el backend sigue con sus
 reglas fijas (ver sección 3).
 
-## 2. Reglas generales del contrato (versión 1.1)
+## 2. Reglas generales del contrato (versión 1.2)
 
 - **Autenticación:** todas las rutas, menos `/health`, exigen el header
   `X-API-Key: <AI_SERVICE_KEY>`. Si falta o es incorrecta, la respuesta es `401`.
@@ -154,6 +154,12 @@ Entrada:
 - `currency` son 3 letras (`USD`, `COP`). El presupuesto solo se compara con obras de la misma
   moneda; el servicio no convierte monedas.
 - Envía solo obras disponibles: el servicio no sabe cuáles están vendidas.
+- **`slug` (opcional, nuevo en 1.2):** el identificador de la obra en el índice de obras del
+  museo (por ejemplo `"slug": "bargueno-colonial"`: minúsculas, números y guiones). Con
+  él, la estrategia `hybrid` también usa lo que la IA aprendió de las fotos: suben las obras
+  parecidas a las que el cliente vio, guardó o compró, y las de los maestros cuyo estilo le
+  gusta. Envía el `slug` también en las obras con las que interactuó. Sin `slug`, la obra se
+  recomienda como antes.
 
 Salida:
 
@@ -169,7 +175,12 @@ Salida:
 }
 ```
 
-- **`explanation`:** frase corta en español lista para mostrar.
+- **`explanation`:** frase corta en español lista para mostrar. Con `slug` puede empezar por
+  "Porque te gustó «Jarrón Flora Azul» de Gilberto Granja." o "Del estilo de María Cabrera:
+  retrato frontal y tocado de grecas coloridas."
+- **`reasons.similar_to` / `reasons.master_style` (nuevos en 1.2):** el `slug` de la obra que
+  le gustó y a la que se parece, o el `slug` del maestro cuyo estilo coincide. Son `null`
+  cuando no aplican.
 - **Diversidad:** el orden evita que un solo taller (`store_id`) llene la lista (MMR). Por eso
   el orden no siempre coincide con `score`: `score` es la relevancia.
 
@@ -223,12 +234,54 @@ Salida:
 - **Precios atípicos:** se descartan con la regla IQR (por ejemplo, 9500 entre precios de 100).
 - **`confidence`:** `high` (8+ comparables con 70 %+ de parecido), `medium` (5+ y 50 %+) o
   `low`. Con `low`, muéstralo como una referencia débil.
+- Es una **sugerencia** para el artesano: muéstrala como tal y deja que él decida.
 
 ### `GET /v1/metrics`
 
 Con `X-API-Key`. Contadores por ruta, latencia, imágenes del día y costo estimado de OpenAI.
 Útil para revisar el gasto; se reinicia cuando Render reinicia el servicio.
-- Es una **sugerencia** para el artesano: muéstrala como tal y deja que él decida.
+
+### `POST /v1/similar`: obras parecidas (nuevo en 1.2)
+
+Para la sección "Obras parecidas" de la ficha de una pieza. Usa lo que la IA aprendió de las fotos
+del museo (no llama a OpenAI al responder).
+
+Entrada:
+
+```json
+{
+  "artwork": {"artwork_id": 12, "slug": "jarron-flora-azul"},
+  "candidates": [
+    {"artwork_id": 11, "slug": "bargueno-colonial", "store_id": 1},
+    {"artwork_id": 13, "slug": "jarron-flora-dorada-fondo-negro", "store_id": 1},
+    {"artwork_id": 31, "slug": "mensajero-ancestral", "store_id": 5}
+  ],
+  "limit": 6
+}
+```
+
+- `candidates`: las obras que se pueden mostrar (solo las **disponibles**), cada una con su
+  `slug`. El servicio no conoce el inventario: así nunca sugiere obras vendidas u ocultas.
+- `limit` va de 1 a 50 (6 por defecto). Se omiten la propia obra y los candidatos sin índice.
+
+Salida:
+
+```json
+{
+  "artwork_id": 12,
+  "slug": "jarron-flora-azul",
+  "items": [
+    {"artwork_id": 13, "slug": "jarron-flora-dorada-fondo-negro", "store_id": 1, "score": 0.8436,
+     "shared_traits": ["flora", "forma de jarrón"], "same_master": true,
+     "explanation": "Comparte con «Jarrón Flora Azul»: flora y forma de jarrón. También es de Gilberto Granja."}
+  ]
+}
+```
+
+- `score` va de 0 a 1 (más alto, más parecida). `shared_traits` son rasgos en común, en español.
+- Errores: `422 not_enough_data` si la obra no está en el índice; `503 feature_disabled` si el
+  servicio no tiene índice. En ambos casos, oculta la sección o usa tu regla actual (por ejemplo,
+  obras de la misma sala).
 
 ## 3. Cliente del servicio de IA en Spring (Adapter)
 
@@ -278,6 +331,8 @@ public interface AiServiceGateway {
     AiRecommendationResponse recommend(AiRecommendationRequest request);
 
     AiDesignResponse generateDesigns(AiDesignRequest request);
+
+    AiSimilarResponse similar(AiSimilarRequest request);
 }
 ```
 
@@ -319,6 +374,11 @@ public class AiServiceClient implements AiServiceGateway {
     @Override
     public AiDesignResponse generateDesigns(AiDesignRequest request) {
         return post(designs, "/v1/designs", request, AiDesignResponse.class);
+    }
+
+    @Override
+    public AiSimilarResponse similar(AiSimilarRequest request) {
+        return post(quick, "/v1/similar", request, AiSimilarResponse.class);
     }
 
     private static <T> T post(RestClient client, String uri, Object body, Class<T> type) {
@@ -363,6 +423,11 @@ public class DisabledAiServiceGateway implements AiServiceGateway {
 
     @Override
     public AiDesignResponse generateDesigns(AiDesignRequest request) {
+        throw disabled();
+    }
+
+    @Override
+    public AiSimilarResponse similar(AiSimilarRequest request) {
         throw disabled();
     }
 
@@ -629,15 +694,23 @@ public record AiRecommendationResponse(String strategy, List<AiRecommendationIte
 public record AiRecommendationItem(Long artworkId, Long storeId, double score,
         AiRecommendationReasons reasons, String explanation) {}
 public record AiRecommendationReasons(List<String> colors, boolean shape, boolean style,
-        List<String> motifs, Boolean budget) {}
+        List<String> motifs, Boolean budget, String similarTo, String masterStyle) {}
+
+// Obras parecidas
+public record AiArtworkRef(Long artworkId, String slug, Long storeId) {}
+public record AiSimilarRequest(AiArtworkRef artwork, List<AiArtworkRef> candidates,
+        Integer limit) {}
+public record AiSimilarResponse(Long artworkId, String slug, List<AiSimilarItem> items) {}
+public record AiSimilarItem(Long artworkId, String slug, Long storeId, double score,
+        List<String> sharedTraits, boolean sameMaster, String explanation) {}
 
 // Precio
 public record AiPriceSuggestion(double suggestedPrice, double minPrice, double maxPrice,
         String currency, String method, String explanation, String confidence) {}
 ```
 
-`AiTasteProfile`, `AiInteraction`, `AiCandidate` y `AiPricingRequest` siguen igual los campos de
-la sección 2. `budget` en `AiRecommendationReasons` es `Boolean` porque puede llegar `null`.
+`AiTasteProfile`, `AiInteraction`, `AiCandidate` (con el `slug` opcional) y `AiPricingRequest`
+siguen igual los campos de la sección 2. `budget` en `AiRecommendationReasons` es `Boolean` porque puede llegar `null`.
 
 `AiServiceException` es una excepción propia (`RuntimeException`) con `status`, `code` y
 `message`. Los timeouts y errores de red llegan como `ResourceAccessException`.
