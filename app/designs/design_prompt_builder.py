@@ -2,16 +2,21 @@
 
 Pattern: **Builder**. The prompt is assembled step by step (craft, object, style, colours,
 motifs, size, customer notes, composition, photography, restrictions) through chainable
-``with_*``
-methods, and ``build`` joins the parts in a fixed order. ``for_request`` acts as the
-director: it applies every step needed for a ``DesignRequest``. The fixed parts (craft
+``with_*`` methods, and ``build`` joins the parts in a fixed order. ``for_request`` acts as
+the director: it applies every step needed for a ``DesignRequest``. The fixed parts (craft
 description, photography and restrictions) are always included, even if a caller forgets
 a step.
+
+The optional ``with_craft_glossary`` step uses ``BarnizGlossary`` (vocabulary of the
+museum's real pieces) to explain, in English, the technique, the shape ("bargueño" is a
+colonial writing cabinet), the style and up to ``MAX_MOTIF_NOTES`` figures found in the
+motifs, title and description ("Sol de los Pastos", "grecas", "colibrí"...).
 """
 
 import re
 from typing import Self
 
+from app.designs.barniz_glossary import TECHNIQUE, BarnizGlossary, GlossaryEntry
 from app.designs.compositions import Composition
 from app.schemas.designs import DesignColor, DesignRequest
 
@@ -26,6 +31,8 @@ PHOTOGRAPHY = (
     "sharp focus, realistic materials."
 )
 RESTRICTIONS = "No people, no hands, no text, no letters, no watermarks and no logos."
+#: Glossary notes about figures are capped so the prompt stays focused.
+MAX_MOTIF_NOTES = 4
 
 
 def _clean(text: str) -> str:
@@ -44,6 +51,7 @@ class DesignPromptBuilder:
         self._description: str | None = None
         self._customer_language = "es"
         self._composition: Composition | None = None
+        self._glossary = False
 
     @classmethod
     def for_request(cls, request: DesignRequest, composition: Composition | None = None) -> str:
@@ -57,6 +65,7 @@ class DesignPromptBuilder:
             .with_size_notes(request.size_notes)
             .with_customer_notes(request.title, request.description, request.language)
             .with_composition(composition)
+            .with_craft_glossary()
             .build()
         )
 
@@ -90,17 +99,48 @@ class DesignPromptBuilder:
         self._composition = composition
         return self
 
+    def with_craft_glossary(self, enabled: bool = True) -> Self:
+        """Explain the technique, shape, style and figures with the Barniz glossary."""
+        self._glossary = enabled
+        return self
+
+    def _shape_entry(self) -> GlossaryEntry | None:
+        if not self._glossary:
+            return None
+        # The shape field first; the title helps when the shape is generic ("mueble").
+        return BarnizGlossary.shape(self._object or "") or BarnizGlossary.shape(self._title or "")
+
+    def _motif_entries(self) -> list[GlossaryEntry]:
+        if not self._glossary:
+            return []
+        found: list[GlossaryEntry] = []
+        sources = ("; ".join(self._motifs), self._title or "", self._description or "")
+        for source in sources:
+            for entry in BarnizGlossary.motifs(source):
+                if entry not in found:
+                    found.append(entry)
+        return found[:MAX_MOTIF_NOTES]
+
     def build(self) -> str:
         parts = [CRAFT]
+        if self._glossary:
+            parts.append(TECHNIQUE)
         if self._object:
-            parts.append(f'Object: a "{self._object}" made in this technique.')
+            shape = self._shape_entry()
+            detail = f": {shape.description}" if shape else ""
+            parts.append(f'Object: a "{self._object}" made in this technique{detail}.')
         if self._style:
-            parts.append(f'Style: "{self._style}".')
+            style = BarnizGlossary.style(self._style) if self._glossary else None
+            parts.append(f'Style: "{self._style}"' + (f", {style}." if style else "."))
         if self._colors:
             palette = ", ".join(f"{color.name} ({color.hex.upper()})" for color in self._colors)
             parts.append(f"Main resin colours: {palette}.")
         if self._motifs:
             parts.append(f"Decorative motifs: {', '.join(self._motifs)}.")
+        notes = self._motif_entries()
+        if notes:
+            explained = "; ".join(f"{entry.term} = {entry.description}" for entry in notes)
+            parts.append(f"Barniz de Pasto references: {explained}.")
         if self._size_notes:
             parts.append(f'Approximate size: "{self._size_notes}".')
         if self._title or self._description:

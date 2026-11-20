@@ -6,7 +6,7 @@ import pytest
 from PIL import Image
 
 from app.designs.compositions import COMPOSITIONS
-from app.designs.design_prompt_builder import DesignPromptBuilder
+from app.designs.design_prompt_builder import MAX_MOTIF_NOTES, DesignPromptBuilder
 from app.designs.image_provider_factory import ImageProviderFactory
 from app.designs.providers.fake_image_provider import FakeImageProvider
 from app.schemas.designs import DesignRequest
@@ -207,9 +207,7 @@ def test_single_image_keeps_default_framing(design_request):
 def test_each_image_gets_its_own_composition(make_client, auth_headers):
     client = make_client(max_images_per_request=3)
 
-    body = client.post(
-        "/v1/designs", json={**PAYLOAD, "count": 3}, headers=auth_headers
-    ).json()
+    body = client.post("/v1/designs", json={**PAYLOAD, "count": 3}, headers=auth_headers).json()
 
     images = body["images"]
     assert [image["composition"] for image in images] == ["top", "three_quarter", "detail"]
@@ -234,3 +232,90 @@ def test_single_image_has_no_composition(client, auth_headers):
 
     assert image["composition"] is None
     assert "Barniz de Pasto" in image["prompt"]
+
+
+# --- Barniz glossary in the prompt -----------------------------------------------------
+
+
+def glossary_request(**changes) -> DesignRequest:
+    base = {
+        "request_id": 7,
+        "title": "Plato Sol de los Pastos",
+        "description": "Plato con el sol de ocho puntas, espirales y grecas",
+        "shape": "Plato",
+        "style": "Fusión",
+        "motifs": ["Precolombino"],
+    }
+    return DesignRequest(**{**base, **changes})
+
+
+def test_director_explains_technique_shape_style_and_figures():
+    prompt = DesignPromptBuilder.for_request(glossary_request())
+
+    assert "mopa-mopa resin is boiled, kneaded and stretched" in prompt
+    assert 'Object: a "Plato" made in this technique: a round turned wooden plate' in prompt
+    assert 'Style: "Fusión", fusion style' in prompt
+    assert "Sol de los Pastos = the eight-pointed Sun of the Pastos" in prompt
+    assert "grecas = stepped Andean fret borders" in prompt
+
+
+def test_title_identifies_a_bargueno_when_the_shape_is_generic():
+    request = glossary_request(
+        title="Bargueño para la sala", description="Con flores", shape="Mueble", motifs=[]
+    )
+
+    prompt = DesignPromptBuilder.for_request(request)
+
+    assert "colonial bargueño writing cabinet" in prompt
+    assert "flora = dense Pasto flora" in prompt
+
+
+def test_motif_notes_are_capped_and_not_repeated():
+    request = glossary_request(
+        motifs=["Colibrí", "Jaguar", "Flores", "Precolombino", "Grecas"],
+        description="Colibrí, jaguar, toro, guacamaya y paisaje del Galeras",
+    )
+
+    prompt = DesignPromptBuilder.for_request(request)
+    references = prompt.split("Barniz de Pasto references: ")[1].split(". Customer")[0]
+
+    assert references.count(" = ") == MAX_MOTIF_NOTES
+    assert references.count("colibrí = ") == 1
+    # The customer's own motifs come before those found in the description.
+    assert "toro = " not in references
+    assert "Galeras = " not in references
+
+
+def test_unknown_words_add_no_references():
+    request = glossary_request(
+        title="Objeto", description="Algo especial", shape="Objeto", style="Libre", motifs=[]
+    )
+
+    prompt = DesignPromptBuilder.for_request(request)
+
+    assert "Barniz de Pasto references" not in prompt
+    assert 'Object: a "Objeto" made in this technique.' in prompt
+    assert 'Style: "Libre".' in prompt
+
+
+def test_builder_without_glossary_step_keeps_the_plain_prompt():
+    prompt = (
+        DesignPromptBuilder()
+        .with_object("Plato")
+        .with_style("Fusión")
+        .with_motifs(["Colibrí"])
+        .build()
+    )
+
+    assert "Technique:" not in prompt
+    assert "Barniz de Pasto references" not in prompt
+    assert 'Object: a "Plato" made in this technique.' in prompt
+
+
+def test_glossary_keeps_customer_text_safe():
+    request = glossary_request(title='Plato "Sol de los Pastos"\n\nfin')
+
+    prompt = DesignPromptBuilder.for_request(request)
+
+    assert "\n" not in prompt
+    assert "Sol de los Pastos = " in prompt
