@@ -4,7 +4,7 @@ def test_health_is_public_and_reports_providers(client):
     assert response.status_code == 200
     assert response.json() == {
         "status": "ok",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "image_provider": "fake",
         "text_provider": "none",
         "commit": None,
