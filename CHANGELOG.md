@@ -4,6 +4,27 @@ Cambios importantes del servicio de IA de MUSEO. Formato basado en
 [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); versiones con
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [1.2.0] - 2026-11-20
+
+Compatible con 1.1.0: solo se agregan campos opcionales y una ruta nueva.
+
+### Agregado
+
+- **La IA aprende de las obras del museo:** `scripts/build_catalog_index.py` describe la foto
+  principal de cada obra con `gpt-6-luna`, la convierte en un embedding
+  (`text-embedding-3-small`, 256 dimensiones) y arma el perfil de cada maestro (promedio y rasgos
+  más repetidos). El resultado, `data/catalog_index.json` (21 obras, 6 maestros), se versiona y
+  se carga al arrancar. Generarlo costó 0.0037 USD.
+- **Recomendaciones híbridas con lo aprendido:** con el `slug` opcional de cada candidato, suman
+  el parecido con las obras que el cliente vio, guardó o compró y la afinidad con el estilo de
+  cada maestro (`RECO_SEMANTIC_WEIGHT`, `RECO_MASTER_WEIGHT`). Mantienen la diversidad (MMR).
+  Explicaciones del tipo "Porque te gustó «…» de …" o "Del estilo de …: …", y los campos
+  `reasons.similar_to` y `reasons.master_style`.
+- **`POST /v1/similar`:** obras parecidas a una obra, entre los candidatos que envía el backend,
+  con los rasgos, figuras y forma que comparten.
+- **Glosario del barniz de Pasto** en el prompt de diseños (bargueño, Sol de los Pastos, grecas,
+  flora…), tomado de las obras reales.
+
 ## [1.1.0] - 2026-11-19
 
 Todos los cambios son compatibles con la versión 1.0.0: solo se agregan campos y códigos.
