@@ -49,9 +49,8 @@ def get_pricing_service(
         "Nunca inventa un precio.\n"
         "- `confidence` (`low`, `medium`, `high`) depende de cuántos comparables se usaron y "
         "qué tan parecidos son.\n"
-        "- Con `mode: \"auction\"` agrega `auction`: precio de salida (percentil 25), reserva "
-        "(mediana de los comparables) e incremento mínimo (una décima del rango).
-"
+        '- Con `mode: "auction"` agrega `auction`: precio de salida (percentil 25), reserva '
+        "(mediana de los comparables) e incremento mínimo (una décima del rango).\n"
         "- Es una sugerencia: el artesano decide."
     ),
     responses=error_responses(*COMMON, "not_enough_data"),
