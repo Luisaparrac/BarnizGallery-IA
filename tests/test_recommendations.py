@@ -272,7 +272,19 @@ def test_endpoint_returns_contract(client, auth_headers):
     assert data["strategy"] == "hybrid"
     assert data["items"][0]["artwork_id"] == 5
     assert data["items"][0]["store_id"] == 2
-    assert set(data["items"][0]["reasons"]) == {"colors", "shape", "style", "motifs", "budget"}
+    reasons = data["items"][0]["reasons"]
+    assert set(reasons) == {
+        "colors",
+        "shape",
+        "style",
+        "motifs",
+        "budget",
+        "similar_to",
+        "master_style",
+    }
+    # Without the catalog index the learned fields are always empty.
+    assert reasons["similar_to"] is None
+    assert reasons["master_style"] is None
 
 
 def test_endpoint_with_no_candidates_returns_empty_list(client, auth_headers):

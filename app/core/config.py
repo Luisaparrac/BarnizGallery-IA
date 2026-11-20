@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     reco_budget_share: float = Field(default=0.15, ge=0, le=1)
     reco_profile_share: float = Field(default=0.6, ge=0, le=1)
     reco_diversity: float = Field(default=0.3, ge=0, le=1)
+    reco_semantic_weight: float = Field(default=0.35, ge=0, le=1)
+    reco_master_weight: float = Field(default=0.15, ge=0, le=1)
 
     # Prices used only to *estimate* the cost in /v1/metrics (the OpenAI bill is the truth).
     openai_image_cost_usd: float = Field(default=0.053, ge=0)
@@ -70,6 +72,8 @@ class Settings(BaseSettings):
         )
         if not any(reco_groups):
             raise ValueError("At least one RECO_WEIGHT_* must be greater than 0")
+        if self.reco_semantic_weight + self.reco_master_weight > 1:
+            raise ValueError("RECO_SEMANTIC_WEIGHT + RECO_MASTER_WEIGHT must be <= 1")
         if self.text_provider == "openai" and not self.openai_text_model:
             raise ValueError("OPENAI_TEXT_MODEL is required when TEXT_PROVIDER=openai")
         return self

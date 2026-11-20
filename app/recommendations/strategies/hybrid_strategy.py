@@ -3,15 +3,25 @@
 Pattern: **Strategy** (concrete). Each interaction adds the vector of the artwork it
 refers to, multiplied by the weight of its action (``VIEW`` grows with the viewing time).
 That *inferred taste* is normalized to ``[0, 1]`` and blended with the profile vector.
+With the catalog index it also adds the similarity to the liked works and the affinity
+with each master's profile (``LearnedSignals``).
 Only interactions with artworks present in ``candidates`` can be used, because the
 service is stateless and only knows the features of the candidates it receives.
 """
 
 import numpy as np
 
+from app.recommendations.catalog_index import CatalogIndex
 from app.recommendations.feature_vectorizer import FeatureVectorizer
+from app.recommendations.learned_signals import LearnedSignal, LearnedSignals
+from app.recommendations.recommendation_weights import DEFAULT_WEIGHTS, RecommendationWeights
 from app.recommendations.strategies.recommendation_strategy import RecommendationStrategy
-from app.schemas.recommendations import Interaction, InteractionAction, RecommendationRequest
+from app.schemas.recommendations import (
+    Candidate,
+    Interaction,
+    InteractionAction,
+    RecommendationRequest,
+)
 
 ACTION_WEIGHTS: dict[InteractionAction, float] = {
     InteractionAction.ZOOM: 1.5,
@@ -36,6 +46,27 @@ def interaction_weight(interaction: Interaction) -> float:
 class HybridStrategy(RecommendationStrategy):
     name = "hybrid"
 
+    def __init__(
+        self, weights: RecommendationWeights = DEFAULT_WEIGHTS, catalog: CatalogIndex | None = None
+    ) -> None:
+        super().__init__(weights)
+        self._catalog = catalog
+        self._signals: LearnedSignals | None = None
+
+    def prepare(self, request: RecommendationRequest) -> None:
+        self._signals = None
+        if self._catalog is not None:
+            self._signals = LearnedSignals(
+                self._catalog,
+                request,
+                interaction_weight,
+                self.weights.semantic_weight,
+                self.weights.master_weight,
+            )
+
+    def learned_signal(self, candidate: Candidate) -> LearnedSignal | None:
+        return self._signals.signal(candidate) if self._signals else None
+
     def user_vector(
         self, request: RecommendationRequest, vectorizer: FeatureVectorizer
     ) -> np.ndarray:
@@ -49,9 +80,7 @@ class HybridStrategy(RecommendationStrategy):
         return share * profile + (1 - share) * taste
 
     @staticmethod
-    def inferred_taste(
-        request: RecommendationRequest, vectorizer: FeatureVectorizer
-    ) -> np.ndarray:
+    def inferred_taste(request: RecommendationRequest, vectorizer: FeatureVectorizer) -> np.ndarray:
         candidates = {candidate.artwork_id: candidate for candidate in request.candidates}
         taste = np.zeros(vectorizer.size, dtype=float)
         for interaction in request.interactions:

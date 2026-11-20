@@ -109,6 +109,10 @@ class Reasons(BaseModel):
     motifs: list[str] = Field(default_factory=list)
     #: ``None`` when there is no budget or the price/currency cannot be compared.
     budget: bool | None = None
+    #: Slug of the liked work this one resembles (catalog index), if any.
+    similar_to: str | None = None
+    #: Slug of the master whose style the person seems to like, if any.
+    master_style: str | None = None
 
 
 class RecommendationItem(BaseModel):

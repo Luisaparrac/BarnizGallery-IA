@@ -2,7 +2,7 @@
 
 Defaults reproduce the original behaviour; ``Settings`` lets them be changed without
 touching code (``RECO_WEIGHT_*``, ``RECO_BUDGET_SHARE``, ``RECO_PROFILE_SHARE``,
-``RECO_DIVERSITY``).
+``RECO_DIVERSITY``, ``RECO_SEMANTIC_WEIGHT``, ``RECO_MASTER_WEIGHT``).
 """
 
 from dataclasses import dataclass
@@ -23,6 +23,10 @@ class RecommendationWeights:
     profile_share: float = 0.6
     #: MMR diversity by workshop: 0 = order by relevance only, 1 = maximum variety.
     diversity: float = 0.3
+    #: Hybrid strategy, with the catalog index: share of the similarity to the liked works
+    #: and of the affinity with the candidate's master (the rest is the content score).
+    semantic_weight: float = 0.35
+    master_weight: float = 0.15
 
     @property
     def groups(self) -> dict[str, float]:
@@ -38,6 +42,8 @@ class RecommendationWeights:
             budget_share=settings.reco_budget_share,
             profile_share=settings.reco_profile_share,
             diversity=settings.reco_diversity,
+            semantic_weight=settings.reco_semantic_weight,
+            master_weight=settings.reco_master_weight,
         )
 
 

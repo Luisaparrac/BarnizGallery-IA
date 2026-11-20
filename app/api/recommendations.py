@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.api.openapi_docs import COMMON, error_responses
 from app.core.config import Settings, get_settings
@@ -14,9 +14,11 @@ router = APIRouter(tags=["recommendations"])
 
 
 def get_recommendation_service(
-    settings: Annotated[Settings, Depends(get_settings)],
+    request: Request, settings: Annotated[Settings, Depends(get_settings)]
 ) -> RecommendationService:
-    return RecommendationService(RecommendationWeights.from_settings(settings))
+    return RecommendationService(
+        RecommendationWeights.from_settings(settings), request.app.state.catalog_index
+    )
 
 
 @router.post(

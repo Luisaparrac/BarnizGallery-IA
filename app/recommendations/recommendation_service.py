@@ -9,6 +9,7 @@ Pattern: **Facade** (and the *context* of the Strategy pattern). The route only 
 """
 
 from app.core.request_context import set_field
+from app.recommendations.catalog_index import CatalogIndex
 from app.recommendations.recommendation_weights import DEFAULT_WEIGHTS, RecommendationWeights
 from app.recommendations.strategies.content_based_strategy import ContentBasedStrategy
 from app.recommendations.strategies.hybrid_strategy import HybridStrategy
@@ -18,8 +19,11 @@ from app.schemas.recommendations import RecommendationRequest, RecommendationRes
 
 
 class RecommendationService:
-    def __init__(self, weights: RecommendationWeights = DEFAULT_WEIGHTS) -> None:
+    def __init__(
+        self, weights: RecommendationWeights = DEFAULT_WEIGHTS, catalog: CatalogIndex | None = None
+    ) -> None:
         self._weights = weights
+        self._catalog = catalog
 
     def recommend(self, request: RecommendationRequest) -> RecommendationResponse:
         strategy = self.choose_strategy(request)
@@ -29,7 +33,7 @@ class RecommendationService:
     def choose_strategy(self, request: RecommendationRequest) -> RecommendationStrategy:
         candidate_ids = {candidate.artwork_id for candidate in request.candidates}
         if any(interaction.artwork_id in candidate_ids for interaction in request.interactions):
-            return HybridStrategy(self._weights)
+            return HybridStrategy(self._weights, self._catalog)
         if request.profile is not None and request.profile.has_tastes():
             return ContentBasedStrategy(self._weights)
         return PopularityStrategy(self._weights)

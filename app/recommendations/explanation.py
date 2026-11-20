@@ -21,7 +21,10 @@ def spanish_list(items: list[str]) -> str:
     return f"{', '.join(items[:-1])} y {items[-1]}"
 
 
-def explain(reasons: Reasons, candidate: Candidate, popular: bool = False) -> str:
+def explain(
+    reasons: Reasons, candidate: Candidate, popular: bool = False, lead: str | None = None
+) -> str:
+    """``lead`` (from the catalog index) goes first and replaces the generic sentence."""
     matches: list[str] = []
     if reasons.colors:
         noun = "el color" if len(reasons.colors) == 1 else "los colores"
@@ -34,12 +37,15 @@ def explain(reasons: Reasons, candidate: Candidate, popular: bool = False) -> st
         noun = "la figura" if len(reasons.motifs) == 1 else "las figuras"
         matches.append(f"{noun} {spanish_list([_label(m) for m in reasons.motifs])}")
 
+    sentences = [lead] if lead else []
     if matches:
-        sentences = [f"Coincide con lo que te gusta: {spanish_list(matches)}."]
+        sentences.append(f"Coincide con lo que te gusta: {spanish_list(matches)}.")
+    elif lead:
+        pass  # the learned sentence already says why; no generic filler
     elif popular:
-        sentences = ["Es una de las obras más populares de la galería."]
+        sentences.append("Es una de las obras más populares de la galería.")
     else:
-        sentences = ["Es una obra distinta que puede ampliar tus gustos."]
+        sentences.append("Es una obra distinta que puede ampliar tus gustos.")
 
     if reasons.budget is True:
         sentences.append("Está dentro de tu presupuesto.")
