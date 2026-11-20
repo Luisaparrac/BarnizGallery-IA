@@ -55,6 +55,7 @@ flowchart LR
 | `POST /v1/recommendations` | Ordena obras según los gustos del cliente, con explicación en español. |
 | `POST /v1/pricing/suggest` | Sugiere un precio a partir de piezas comparables, con nivel de confianza. |
 | `POST /v1/similar` | Obras parecidas a una obra, con los rasgos que comparten. |
+| `POST /v1/bids/assess` | Marca pujas sospechosas para el administrador (nunca las rechaza). |
 | `GET /v1/metrics` | Contadores por ruta, latencia, imágenes del día y costo estimado. |
 
 Las recomendaciones y el precio usan **códigos de texto** (`"rojo"`, `"colibri"`, `"bandeja"`)
@@ -136,6 +137,7 @@ nada**: las imágenes las dibuja Pillow y el precio sale solo de los comparables
 | `RECO_SEMANTIC_WEIGHT` | Peso del parecido con las obras que le gustaron (con índice) | `0.35` |
 | `RECO_MASTER_WEIGHT` | Peso de la afinidad con el estilo de cada maestro (con índice) | `0.15` |
 | `CATALOG_INDEX_PATH` | Ruta del índice de obras | `data/catalog_index.json` |
+| `BID_MODEL_PATH` | Ruta del detector de pujas entrenado | `models/bid_anomaly.joblib` |
 | `OPENAI_IMAGE_COST_USD` | Precio por imagen para el costo estimado | `0.053` |
 | `OPENAI_TEXT_INPUT_USD_PER_MTOK` / `_OUTPUT_` | Precio por millón de tokens de texto | `0.10` / `0.50` |
 | `DOCS_ENABLED` | Mostrar `/docs`, `/redoc` y `/openapi.json` | `true` |
@@ -221,6 +223,65 @@ Detalles:
   python scripts/build_catalog_index.py --dry-run  # sin OpenAI, para probar
   ```
 
+## Cómo se entrenó el detector de pujas
+
+> **Los datos son SINTÉTICOS.** MUSEO todavía no tiene historial de subastas. Las métricas de
+> abajo dicen qué tan bien el detector reconoce los patrones que simulamos, no qué tan bien
+> funcionará con compradores reales. Cuando haya subastas reales, hay que volver a entrenar y
+> medir con ellas.
+
+1. **Simulamos subastas.** `scripts/generate_auction_data.py` crea 168 subastas de 3 días para
+   las obras del museo (2.317 pujas, semilla fija 2026, `data/auctions_synthetic.csv`).
+   - **Normales:** varios postores, cada uno con un precio máximo que está dispuesto a pagar,
+     incrementos razonables y pujas en los últimos minutos (sniping legítimo).
+   - **Sospechosas (13,5 %), etiquetadas:** puja inflada (*shill*: una cuenta sube el precio con
+     el paso mínimo justo después de los demás y se retira antes del cierre), ráfagas tipo bot,
+     saltos exagerados y cuentas nuevas con montos muy altos.
+2. **Convertimos cada puja en números** (`app/auctions/bid_features.py`): cuántas veces supera
+   la puja actual y el precio base, en cuántos incrementos mínimos sube, el tiempo desde su puja
+   anterior y desde la última puja de la subasta, cuántas pujas hizo en el último minuto, la
+   antigüedad de la cuenta, cuántas veces subió su propia puja y cuánto falta para el cierre. El
+   servicio usa exactamente la misma función.
+3. **Entrenamos un Isolation Forest** (`scripts/train_bid_model.py`, scikit-learn). No usa las
+   etiquetas: aprende cómo se ve una puja común y mide qué tan rara es una nueva. Separamos por
+   subasta: 70 % para entrenar y 30 % para evaluar, sin mezclar pujas de una misma subasta.
+4. **Lo evaluamos** con las subastas que no vio (654 pujas, 74 sospechosas):
+
+   | Métrica | Valor |
+   |---|---|
+   | Precisión (de las que marcó, cuántas eran sospechosas) | 0,56 |
+   | Recall (de las sospechosas, cuántas marcó) | 0,77 |
+   | F1 | 0,65 |
+   | Falsas alarmas (pujas normales marcadas) | 7,6 % |
+
+   | Matriz de confusión | Marcada | No marcada |
+   |---|---|---|
+   | **Sospechosa** | 57 | 17 |
+   | **Normal** | 44 | 536 |
+
+   Recall por tipo: saltos exagerados 100 %, cuentas nuevas con montos altos 100 %, ráfagas tipo
+   bot 85 %, puja inflada 55 %. La puja inflada es la más difícil: una sola puja con el paso
+   mínimo se parece a una normal; se nota cuando la cuenta acumula pujas.
+5. **Lo que no funcionó:** elegir el umbral con una parte de validación mejoraba la validación
+   pero empeoraba la prueba (F1 0,58): con tan pocos datos se sobreajusta. Por eso se deja el
+   umbral natural del modelo.
+
+**Cómo se usa:** `POST /v1/bids/assess` marca la puja como `SUSPICIOUS` si el modelo la ve rara
+**o** si hay una señal clara (salto de 10 veces la puja actual, 5 pujas en un minuto, cuenta
+nueva con un monto de 3 veces el precio base). Las razones salen de reglas fijas y están en
+español. **Nunca rechaza una puja**: solo la deja marcada para el administrador. Sin el modelo,
+funciona con las reglas.
+
+Para volver a generar los datos y el modelo (en un PC, no en Render):
+
+```bash
+python scripts/generate_auction_data.py   # data/auctions_synthetic.csv
+python scripts/train_bid_model.py         # models/bid_anomaly.joblib y bid_anomaly_metrics.json
+```
+
+El modelo pesa 436 KB y con él cargado el servicio usa unos 190 MB de memoria: cabe en el plan
+gratis de Render (512 MB).
+
 ## Precio sugerido
 
 El precio es una **sugerencia** para el artesano; él decide.
@@ -233,6 +294,11 @@ El precio es una **sugerencia** para el artesano; él decide.
 
 Con menos de 3 comparables, haya o no modelo de texto, responde `422 not_enough_data`:
 **nunca inventa un precio**.
+
+**Modo subasta** (`"mode": "auction"`): además devuelve el precio de salida (percentil 25),
+la reserva (mediana ponderada de los comparables, sin el ajuste del modelo de texto) y el
+incremento mínimo (una décima parte del rango intercuartílico, al menos 1). Todo sale de los
+comparables.
 
 ## Despliegue en Render (Docker)
 
