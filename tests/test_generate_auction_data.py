@@ -127,3 +127,22 @@ def test_cli_writes_a_csv(tmp_path, capsys):
     assert tuple(rows[0]) == generator.COLUMNS
     assert {row["artwork_slug"] for row in rows} == {"bargueno-colonial", "tradicion"}
     assert "SINTÉTICOS" in capsys.readouterr().out
+
+
+def test_normal_bidders_stop_at_their_valuation(rows):
+    price = {artwork.slug: artwork.price for artwork in ARTWORKS}
+
+    for row in by_label(rows, "normal"):
+        assert row["amount"] <= 1.5 * price[row["artwork_slug"]]
+
+
+def test_last_bid_time_is_the_previous_bid_of_the_auction(rows):
+    auctions = defaultdict(list)
+    for row in rows:
+        auctions[row["auction_id"]].append(row)
+
+    for bids in auctions.values():
+        bids.sort(key=lambda b: (when(b["placed_at"]), b["bid_id"]))
+        assert bids[0]["last_bid_at_before"] == ""
+        for previous, current in itertools.pairwise(bids):
+            assert current["last_bid_at_before"] == previous["placed_at"]

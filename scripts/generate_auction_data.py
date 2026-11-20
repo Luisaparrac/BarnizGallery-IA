@@ -10,8 +10,9 @@ trained and evaluated. Usage::
 For each artwork of the frontend's ``data/obras.csv`` (price or provisional price) it
 simulates several 3-day auctions:
 
-- **normal**: several bidders, increments of 1 to 3 minimum steps, and a share of bids in
-  the last minutes (legitimate sniping); rarely, someone raises their own winning bid.
+- **normal**: several bidders, each with a maximum price they are willing to pay (0.9 to 1.5
+  times the piece's price), increments of 1 to 3 minimum steps and a share of bids in the
+  last minutes (legitimate sniping); rarely, someone raises their own winning bid.
 - **shill** (puja inflada): one account bids right after the others, always with the minimum
   step, to push the price up, and stops well before the close.
 - **bot_burst**: 5 to 9 bids from the same account a few seconds apart.
@@ -54,12 +55,13 @@ COLUMNS = (
     "amount",
     "current_bid_before",
     "leader_before",
+    "last_bid_at_before",
     "raised_own",
     "label",
     "is_suspicious",
 )
 # Chance that an auction contains each kind of manipulation.
-INJECTION_CHANCE = {"shill": 0.18, "bot_burst": 0.12, "huge_jump": 0.18, "new_account_high": 0.18}
+INJECTION_CHANCE = {"shill": 0.12, "bot_burst": 0.08, "huge_jump": 0.18, "new_account_high": 0.18}
 
 
 @dataclass
@@ -74,6 +76,8 @@ class Bidder:
     bidder_id: int
     account_created_at: datetime
     kind: str
+    #: Most a normal bidder will pay; ``None`` for manipulative accounts.
+    valuation: float | None = None
 
 
 @dataclass
@@ -117,13 +121,15 @@ class AuctionSimulator:
             age = timedelta(days=self.rng.uniform(20, max_age_days))
         return Bidder(self._next_bidder, starts - age, kind)
 
-    def plan(self, starts: datetime, ends: datetime) -> list[Attempt]:
+    def plan(self, starts: datetime, ends: datetime, price: float) -> list[Attempt]:
         rng = self.rng
         duration = (ends - starts).total_seconds()
         people = [self.bidder("normal", starts, 1500) for _ in range(rng.randint(3, 8))]
+        for person in people:
+            person.valuation = price * rng.uniform(0.9, 1.5)
         attempts = []
-        for _ in range(max(4, int(rng.gauss(16, 5)))):
-            if rng.random() < 0.25:  # legitimate sniping in the last 5 minutes
+        for _ in range(max(6, int(rng.gauss(22, 6)))):
+            if rng.random() < 0.3:  # legitimate sniping in the last 5 minutes
                 at = ends - timedelta(seconds=rng.uniform(2, 300))
             else:
                 at = starts + timedelta(seconds=rng.uniform(0, duration * 0.97))
@@ -159,19 +165,22 @@ class AuctionSimulator:
         rng = self.rng
         ends = starts + timedelta(days=AUCTION_DAYS)
         base = round(artwork.price * rng.uniform(0.5, 0.8))
-        step = max(1, round(base * 0.05))
+        step = max(1, round(base * 0.025))
         current: float | None = None
         leader: int | None = None
+        last_bid_at: datetime | None = None
 
-        for attempt in self.plan(starts, ends):
+        for attempt in self.plan(starts, ends, artwork.price):
             reference = current or base
             raised_own = leader == attempt.bidder.bidder_id
             if attempt.kind == "normal":
                 if raised_own and rng.random() > 0.05:
                     continue  # people rarely raise their own winning bid
-                amount = reference + step * rng.choice((1, 1, 1, 2, 2, 3)) + rng.uniform(0, step)
+                amount = reference + step * rng.choice((1, 1, 1, 1, 2, 2, 3)) + rng.uniform(0, step)
                 if current is None:
                     amount = base + rng.uniform(0, step)
+                if amount > attempt.bidder.valuation:
+                    continue  # past what this person is willing to pay
             elif attempt.kind in ("shill", "bot_burst"):
                 amount = reference + step
             elif attempt.kind == "huge_jump":
@@ -196,11 +205,12 @@ class AuctionSimulator:
                 "amount": amount,
                 "current_bid_before": "" if current is None else current,
                 "leader_before": "" if leader is None else leader,
+                "last_bid_at_before": "" if last_bid_at is None else last_bid_at.isoformat(),
                 "raised_own": int(raised_own),
                 "label": attempt.kind,
                 "is_suspicious": int(attempt.kind != "normal"),
             }
-            current, leader = amount, attempt.bidder.bidder_id
+            current, leader, last_bid_at = amount, attempt.bidder.bidder_id, attempt.at
 
 
 def generate(artworks: list[Artwork], auctions_per_work: int, seed: int) -> list[dict]:
