@@ -20,6 +20,20 @@ def build_settings(**overrides) -> Settings:
     return Settings(_env_file=None, ai_service_key=TEST_API_KEY, **overrides)
 
 
+@pytest.fixture(autouse=True)
+def isolate_from_dotenv(tmp_path, monkeypatch):
+    """Run every test from an empty folder, so the developer's real ``.env`` is never read.
+
+    ``Settings`` looks for ``.env`` in the current directory; in CI there is none. Without
+    this, a test that forgets to inject settings passes locally and fails in CI.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("AI_SERVICE_KEY", raising=False)
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 @pytest.fixture
 def settings() -> Settings:
     return build_settings()

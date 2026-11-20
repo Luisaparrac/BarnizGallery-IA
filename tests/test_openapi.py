@@ -1,7 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.config import get_settings
 from app.main import create_app, env_flag
+from tests.conftest import build_settings
 
 MEDIA = "application/json; charset=utf-8"
 
@@ -50,7 +52,7 @@ def test_docs_page_loads(client):
 
 
 def test_docs_can_be_disabled():
-    client = TestClient(create_app(docs_enabled=False))
+    client = client_for(create_app(docs_enabled=False))
 
     for path in ("/docs", "/redoc", "/openapi.json"):
         assert client.get(path).status_code == 404
@@ -81,4 +83,11 @@ def test_docs_enabled_env_flag(monkeypatch, value, expected):
 def test_docs_disabled_from_environment(monkeypatch):
     monkeypatch.setenv("DOCS_ENABLED", "false")
 
-    assert TestClient(create_app()).get("/docs").status_code == 404
+    assert client_for(create_app()).get("/docs").status_code == 404
+
+
+def client_for(app) -> TestClient:
+    """Client with test settings injected (never the real configuration)."""
+    settings = build_settings()
+    app.dependency_overrides[get_settings] = lambda: settings
+    return TestClient(app)
