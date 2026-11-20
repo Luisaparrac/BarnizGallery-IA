@@ -6,8 +6,9 @@ from pathlib import Path
 from fastapi import Depends, FastAPI
 
 from app import __version__
-from app.api import designs, health, metrics, pricing, recommendations, similar
+from app.api import bids, designs, health, metrics, pricing, recommendations, similar
 from app.api.openapi_docs import install_openapi
+from app.auctions.bid_model import BidModel
 from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import Settings, get_settings
 from app.core.errors import register_error_handlers
@@ -39,13 +40,23 @@ DEFAULT_CATALOG_INDEX = Path(__file__).resolve().parent.parent / "data" / "catal
 _LOAD_FROM_ENVIRONMENT = object()
 
 
+DEFAULT_BID_MODEL = Path(__file__).resolve().parent.parent / "models" / "bid_anomaly.joblib"
+
+
+def load_bid_model() -> BidModel | None:
+    """Model path from ``BID_MODEL_PATH`` (read here, like ``LOG_LEVEL``)."""
+    return BidModel.from_file(Path(os.getenv("BID_MODEL_PATH") or DEFAULT_BID_MODEL))
+
+
 def load_catalog_index() -> CatalogIndex | None:
     """Index path from ``CATALOG_INDEX_PATH`` (read here, like ``LOG_LEVEL``)."""
     return CatalogIndex.from_file(Path(os.getenv("CATALOG_INDEX_PATH") or DEFAULT_CATALOG_INDEX))
 
 
 def create_app(
-    docs_enabled: bool | None = None, catalog_index: object = _LOAD_FROM_ENVIRONMENT
+    docs_enabled: bool | None = None,
+    catalog_index: object = _LOAD_FROM_ENVIRONMENT,
+    bid_model: object = _LOAD_FROM_ENVIRONMENT,
 ) -> FastAPI:
     """Create the FastAPI application.
 
@@ -68,6 +79,7 @@ def create_app(
             {"name": "designs", "description": "Imágenes de propuesta para encargos."},
             {"name": "recommendations", "description": "Obras según los gustos del cliente."},
             {"name": "pricing", "description": "Precio sugerido para el artesano."},
+            {"name": "auctions", "description": "Pujas sospechosas para revisión del admin."},
             {"name": "metrics", "description": "Contadores, latencia y costo estimado."},
         ],
     )
@@ -77,6 +89,7 @@ def create_app(
     app.state.catalog_index = (
         load_catalog_index() if catalog_index is _LOAD_FROM_ENVIRONMENT else catalog_index
     )
+    app.state.bid_model = load_bid_model() if bid_model is _LOAD_FROM_ENVIRONMENT else bid_model
     register_error_handlers(app)
     app.add_middleware(
         BodySizeLimitMiddleware, max_bytes=lambda: current_settings(app).max_request_bytes
@@ -95,6 +108,7 @@ def create_app(
     app.include_router(recommendations.router, **protected)
     app.include_router(similar.router, **protected)
     app.include_router(pricing.router, **protected)
+    app.include_router(bids.router, **protected)
     app.include_router(metrics.router, **protected)
     install_openapi(app)
     return app

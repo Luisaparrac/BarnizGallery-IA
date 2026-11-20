@@ -12,6 +12,7 @@ RUN pip install -r requirements.txt
 
 COPY app ./app
 COPY data ./data
+COPY models ./models
 
 RUN useradd --create-home --uid 10001 appuser
 USER appuser

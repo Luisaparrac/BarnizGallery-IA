@@ -32,6 +32,8 @@ def isolate_from_dotenv(tmp_path, monkeypatch):
     # Tests never depend on the real data/catalog_index.json: by default there is none,
     # and the tests that need one inject the small example index.
     monkeypatch.setenv("CATALOG_INDEX_PATH", str(tmp_path / "no-catalog-index.json"))
+    # Same for the bid model: rules only, unless a test injects a model.
+    monkeypatch.setenv("BID_MODEL_PATH", str(tmp_path / "no-bid-model.joblib"))
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
