@@ -4,6 +4,30 @@ Cambios importantes del servicio de IA de MUSEO. Formato basado en
 [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); versiones con
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [1.3.0] - 2026-11-20
+
+Compatible con 1.2.0: una ruta nueva y campos opcionales.
+
+### Agregado
+
+- **Detector de pujas sospechosas:** `POST /v1/bids/assess` responde `OK` o `SUSPICIOUS`, un
+  `score` de 0 a 1 y razones en español. Nunca rechaza: solo marca para el administrador. Usa un
+  Isolation Forest (scikit-learn) entrenado con datos **sintéticos** más reglas fijas, y sin
+  modelo funciona solo con las reglas.
+- **Datos sintéticos de subastas:** `scripts/generate_auction_data.py` (semilla fija) y
+  `data/auctions_synthetic.csv`: 168 subastas y 2.317 pujas, con puja inflada, ráfagas tipo
+  bot, saltos exagerados y cuentas nuevas con montos altos etiquetados.
+- **Entrenamiento:** `scripts/train_bid_model.py` guarda `models/bid_anomaly.joblib` (436 KB) y
+  `models/bid_anomaly_metrics.json`. En las subastas de prueba: precisión 0,56, recall 0,77,
+  F1 0,65 y 7,6 % de falsas alarmas.
+- **Modo subasta en el precio sugerido:** con `"mode": "auction"` devuelve el precio de salida,
+  la reserva y el incremento mínimo, calculados con los comparables.
+
+### Cambiado
+
+- Dependencias: `scikit-learn` y `joblib`. El servicio usa unos 190 MB de memoria con el modelo
+  cargado (el plan gratis de Render tiene 512 MB).
+
 ## [1.2.0] - 2026-11-20
 
 Compatible con 1.1.0: solo se agregan campos opcionales y una ruta nueva.
